@@ -37,6 +37,7 @@ export interface SessionMatch {
 }
 
 export type RuntimeSource =
+  | "server-explicit"
   | "sqlite-exact"
   | "sqlite-descendant-running"
   | "sqlite-descendant-recent"
@@ -44,8 +45,8 @@ export type RuntimeSource =
   | "unmapped";
 
 export interface RuntimeMatchInfo {
-  strategy: "exact" | "descendant-running" | "descendant-recent" | "descendant-only" | "unmapped";
-  provider: "sqlite" | "none";
+  strategy: "target-map" | "exact" | "descendant-running" | "descendant-recent" | "descendant-only" | "unmapped";
+  provider: "server" | "sqlite" | "none";
   heuristic: boolean;
 }
 
@@ -72,4 +73,11 @@ export interface PaneFilterOptions {
   busy?: boolean;
   waiting?: boolean;
   running?: boolean;
+}
+
+export type RuntimeProviderName = "auto" | "sqlite" | "server";
+
+export interface RuntimeProviderOptions {
+  provider?: RuntimeProviderName;
+  serverMap?: string;
 }

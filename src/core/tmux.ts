@@ -143,6 +143,26 @@ export function findDiscoveredPaneByTarget(panes: DiscoveredPane[], target: Pane
   return panes.find((entry) => entry.pane.target === target) ?? null;
 }
 
+export async function getCurrentTmuxTarget(): Promise<PaneTarget> {
+  const proc = Bun.spawn(["tmux", "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+
+  const [stdoutText, stderrText, exitCode] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+    proc.exited,
+  ]);
+
+  if (exitCode !== 0) {
+    const message = stderrText.trim() || "tmux display-message failed";
+    throw new Error(message);
+  }
+
+  return stdoutText.trim() as PaneTarget;
+}
+
 export async function switchToPane(pane: TmuxPane): Promise<void> {
   const insideTmux = Boolean(process.env.TMUX);
   const windowTarget = `${pane.sessionName}:${pane.windowIndex}`;
