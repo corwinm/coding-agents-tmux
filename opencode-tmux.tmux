@@ -16,6 +16,10 @@ get_tmux_option() {
   fi
 }
 
+shell_escape() {
+  printf "'%s'" "${1//\'/\'\\\'\'}"
+}
+
 append_status_segment() {
   local option_name="$1"
   local segment="$2"
@@ -102,8 +106,15 @@ main() {
       ;;
   esac
 
-  local switch_command status_command
-  switch_command="cd '$CURRENT_DIR' && bun run '$CURRENT_DIR/src/cli.ts' switch --provider '$provider'"
+  local switch_command status_command popup_script
+  popup_script="$CURRENT_DIR/scripts/tmux-popup-switch.sh"
+
+  if [ ! -f "$popup_script" ]; then
+    tmux display-message "opencode-tmux: missing scripts/tmux-popup-switch.sh in plugin directory"
+    exit 0
+  fi
+
+  switch_command="$popup_script --provider '$provider'"
   status_command="cd '$CURRENT_DIR' && bun run '$CURRENT_DIR/src/cli.ts' status --style '$status_style' --provider '$provider'"
 
   if [ -n "$server_map" ]; then

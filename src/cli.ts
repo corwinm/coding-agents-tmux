@@ -2,6 +2,7 @@
 
 import { Command } from "commander";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, createWriteStream } from "node:fs";
 import { createInterface } from "node:readline/promises";
 import { homedir } from "node:os";
 import { stdin as input, stdout as output } from "node:process";
@@ -98,6 +99,11 @@ function tmuxDoubleQuote(value: string): string {
 
 function buildShellRunCommand(args: string[]): string {
   return `cd ${shellEscape(process.cwd())} && bun run ${buildSelfCommand(args)}`;
+}
+
+function buildPopupScriptCommand(args: string[]): string {
+  const scriptPath = `${process.cwd()}/scripts/tmux-popup-switch.sh`;
+  return [scriptPath, ...args].map(shellEscape).join(" ");
 }
 
 function buildSelfCommand(args: string[]): string {
@@ -222,13 +228,19 @@ function requirePaneByTarget(panes: PaneRuntimeSummary[], target: string): PaneR
 }
 
 async function promptForPaneSelection(panes: PaneRuntimeSummary[]): Promise<PaneRuntimeSummary> {
-  if (!input.isTTY || !output.isTTY) {
+  const useProcessTty = Boolean(input.isTTY && output.isTTY);
+  const canUseDevTty = existsSync("/dev/tty");
+
+  if (!useProcessTty && !canUseDevTty) {
     throw new Error("Interactive switch requires a TTY. Pass an explicit target instead.");
   }
 
-  console.log(renderSwitchChoices(panes));
+  const promptInput = useProcessTty ? input : createReadStream("/dev/tty");
+  const promptOutput = useProcessTty ? output : createWriteStream("/dev/tty");
 
-  const rl = createInterface({ input, output });
+  promptOutput.write(`${renderSwitchChoices(panes)}\n`);
+
+  const rl = createInterface({ input: promptInput, output: promptOutput });
 
   try {
     const answer = (await rl.question("\nEnter selection number or target: ")).trim();
@@ -252,6 +264,11 @@ async function promptForPaneSelection(panes: PaneRuntimeSummary[]): Promise<Pane
     return requirePaneByTarget(panes, answer);
   } finally {
     rl.close();
+
+    if (!useProcessTty) {
+      promptInput.destroy();
+      promptOutput.end();
+    }
   }
 }
 
@@ -268,7 +285,7 @@ async function runSwitchFilteredCommand(target: string | undefined, options: Swi
 }
 
 async function runPopupCommand(options: PopupOptions): Promise<void> {
-  const switchArgs = ["switch"];
+  const switchArgs: string[] = [];
 
   if (options.provider) {
     switchArgs.push("--provider", options.provider);
@@ -388,7 +405,7 @@ function escapeRegExp(value: string): string {
 }
 
 function buildTmuxSnippet(options: TmuxConfigOptions): string {
-  const switchArgs = ["switch"];
+  const switchArgs: string[] = [];
   const statusArgs = ["status", "--style", "tmux"];
 
   if (options.provider) {
@@ -403,7 +420,7 @@ function buildTmuxSnippet(options: TmuxConfigOptions): string {
 
   switchArgs.push(...getPopupFilterArgs(options.popupFilter));
 
-  const switchCommand = buildShellRunCommand(switchArgs);
+  const switchCommand = buildPopupScriptCommand(switchArgs);
   const statusCommand = buildShellRunCommand(statusArgs);
   const key = options.key ?? "O";
 

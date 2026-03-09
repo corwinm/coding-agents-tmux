@@ -114,13 +114,21 @@ Available TPM options:
 
 After installing with TPM, press prefix + `I` and reload tmux if needed. TPM users also need `bun` installed because the plugin runs the local CLI.
 
-Example tmux binding:
+To enable the status line when using TPM, add:
 
 ```tmux
-bind-key O run-shell 'cd /Users/corwin/Documents/GitHub/opencode-tmux && bun run src/cli.ts popup --busy'
+set -g @opencode-tmux-status 'on'
+set -g @opencode-tmux-status-style 'tmux'
+set -g @opencode-tmux-status-position 'right'
 ```
 
-Or generate a ready-to-paste snippet:
+Then install or reload TPM:
+
+```tmux
+prefix + I
+```
+
+If you are not using TPM, generate a ready-to-paste snippet instead:
 
 ```bash
 bun run src/cli.ts tmux-config
@@ -128,16 +136,16 @@ bun run src/cli.ts tmux-config
 
 ## Tmux Status Line
 
-Example tmux status-right usage:
+If you are not using TPM, example tmux `status-right` usage:
 
 ```tmux
-set -g status-right '#(cd /Users/corwin/Documents/GitHub/opencode-tmux && bun run src/cli.ts status)'
+set -g status-right '#(cd /path/to/opencode-tmux && bun run src/cli.ts status)'
 ```
 
 For tmux color formatting:
 
 ```tmux
-set -g status-right '#(cd /Users/corwin/Documents/GitHub/opencode-tmux && bun run src/cli.ts status --style tmux)'
+set -g status-right '#(cd /path/to/opencode-tmux && bun run src/cli.ts status --style tmux)'
 ```
 
 Current status output also includes simple symbols:
@@ -150,7 +158,7 @@ Current status output also includes simple symbols:
 To always show a global summary instead of the current pane context:
 
 ```tmux
-set -g status-right '#(cd /Users/corwin/Documents/GitHub/opencode-tmux && bun run src/cli.ts status --summary)'
+set -g status-right '#(cd /path/to/opencode-tmux && bun run src/cli.ts status --summary)'
 ```
 
 ## Tmux Config Generator
