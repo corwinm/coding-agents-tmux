@@ -89,20 +89,30 @@ set -g @opencode-tmux-launcher 'popup'
 
 When enabled, the status line shows two views at once:
 
-- `here` = the currently focused pane
-- `other` = a summary of the remaining `opencode` panes
+- the current pane state
+- a compact summary of the remaining `opencode` panes
 
 Example output:
 
 ```text
-OC here idle other 2 busy 1 waiting
+OC | idle | 3 idle
+OC | busy | 1 wait
+OC | new | none
 ```
 
 This means:
 
-- the focused pane is idle
-- two other panes are busy
-- one of those busy panes is specifically waiting for input
+- `OC | idle | 3 idle` means the focused pane is idle and three background panes are idle
+- `OC | busy | 1 wait` means the focused pane is busy and one background pane is waiting for input
+- `OC | new | none` means the focused pane is newly started and there are no other detected `opencode` panes
+
+Background summary priority is:
+
+- `wait` first
+- then `idle`
+- then `busy`
+
+So if any background pane is waiting on you, the status line surfaces that instead of less actionable busy work.
 
 Enable or tune the status line with:
 

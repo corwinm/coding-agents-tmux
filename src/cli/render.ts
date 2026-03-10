@@ -249,36 +249,37 @@ function getCurrentLabel(entry: PaneRuntimeSummary): string {
 
 function renderBackgroundSummary(panes: PaneRuntimeSummary[], style: StatusStyle): string[] {
   if (panes.length === 0) {
-    return [formatStatusToken("other", "neutral", style), formatStatusToken("none", "unknown", style)];
+    return [formatStatusToken("none", "unknown", style)];
   }
 
   const busy = panes.filter((entry) => entry.runtime.activity === "busy").length;
   const waiting = panes.filter((entry) => entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input").length;
+  const idle = panes.filter((entry) => entry.runtime.activity === "idle").length;
 
-  if (busy === 0) {
-    return [formatStatusToken("other", "neutral", style), formatStatusToken(`${panes.length} idle`, "idle", style)];
+  if (waiting > 0) {
+    return [formatStatusToken(`${waiting} wait`, "waiting", style)];
   }
 
-  if (busy === waiting) {
-    return [formatStatusToken("other", "neutral", style), formatStatusToken(`${waiting} waiting`, "waiting", style)];
+  if (idle > 0) {
+    return [formatStatusToken(`${idle} idle`, "idle", style)];
   }
 
-  if (waiting === 0) {
-    return [formatStatusToken("other", "neutral", style), formatStatusToken(`${busy} busy`, "busy", style)];
+  if (busy > 0) {
+    return [formatStatusToken(`${busy} busy`, "busy", style)];
   }
 
-  return [formatStatusToken("other", "neutral", style), formatStatusToken(`${busy} busy`, "busy", style), formatStatusToken(`${waiting} waiting`, "waiting", style)];
+  return [formatStatusToken("none", "unknown", style)];
 }
 
 function renderCurrentSummary(current: PaneRuntimeSummary | null, style: StatusStyle): string[] {
   if (!current) {
-    return [formatStatusToken("here", "neutral", style), formatStatusToken("none", "unknown", style)];
+    return [formatStatusToken("none", "unknown", style)];
   }
 
   const activityTone = getActivityTone(current);
   const label = getCurrentLabel(current);
 
-  return [formatStatusToken("here", "neutral", style), formatStatusToken(label, activityTone, style)];
+  return [formatStatusToken(label, activityTone, style)];
 }
 
 export function renderStatusSummary(
@@ -291,12 +292,12 @@ export function renderStatusSummary(
   if (current) {
     const backgroundPanes = panes.filter((entry) => entry.pane.target !== current.pane.target);
 
-    return [formatStatusToken("OC", "neutral", style), ...renderCurrentSummary(current, style), ...renderBackgroundSummary(backgroundPanes, style)].join(" ");
+    return [formatStatusToken("OC", "neutral", style), formatStatusToken("|", "neutral", style), ...renderCurrentSummary(current, style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(backgroundPanes, style)].join(" ");
   }
 
   if (options.includeCurrentPlaceholder) {
-    return [formatStatusToken("OC", "neutral", style), ...renderCurrentSummary(null, style), ...renderBackgroundSummary(panes, style)].join(" ");
+    return [formatStatusToken("OC", "neutral", style), formatStatusToken("|", "neutral", style), ...renderCurrentSummary(null, style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(panes, style)].join(" ");
   }
 
-  return [formatStatusToken("OC", "neutral", style), ...renderBackgroundSummary(panes, style)].join(" ");
+  return [formatStatusToken("OC", "neutral", style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(panes, style)].join(" ");
 }
