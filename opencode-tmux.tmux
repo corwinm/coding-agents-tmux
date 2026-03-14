@@ -99,6 +99,21 @@ normalize_toggle() {
   esac
 }
 
+normalize_runner() {
+  local value="$1"
+  case "$value" in
+    node|bun|"")
+      printf '%s' "${value:-node}"
+      ;;
+    auto)
+      printf '%s' 'node'
+      ;;
+    *)
+      printf '%s' 'node'
+      ;;
+  esac
+}
+
 install_opencode_plugin() {
   local plugin_source="$CURRENT_DIR/plugin/opencode-tmux.ts"
   local config_root plugin_dir plugin_target
@@ -118,12 +133,7 @@ install_opencode_plugin() {
 }
 
 main() {
-  if ! command -v bun >/dev/null 2>&1; then
-    tmux display-message "opencode-tmux: bun is required; install bun and reload TPM"
-    exit 0
-  fi
-
-  local key waiting_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval launcher install_plugin
+  local key waiting_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval launcher install_plugin runner
   local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown
   local previous_status_segment previous_status_option
   key="$(get_tmux_option '@opencode-tmux-key' 'O')"
@@ -136,6 +146,7 @@ main() {
   popup_title="$(get_tmux_option '@opencode-tmux-popup-title' 'OpenCode Sessions')"
   launcher="$(normalize_launcher "$(get_tmux_option '@opencode-tmux-launcher' 'menu')")"
   install_plugin="$(normalize_toggle "$(get_tmux_option '@opencode-tmux-install-opencode-plugin' 'on')")"
+  runner="$(normalize_runner "$(get_tmux_option '@opencode-tmux-runner' 'node')")"
   status_enabled="$(get_tmux_option '@opencode-tmux-status' 'on')"
   status_style="$(get_tmux_option '@opencode-tmux-status-style' 'tmux')"
   status_position="$(get_tmux_option '@opencode-tmux-status-position' 'right')"
@@ -150,8 +161,8 @@ main() {
   previous_status_option="$(get_tmux_option '@opencode-tmux-status-option' 'status-right')"
   status_option="$(normalize_status_option "$status_position")"
 
-  if [ ! -f "$CURRENT_DIR/src/cli.ts" ]; then
-    tmux display-message "opencode-tmux: missing src/cli.ts in plugin directory"
+  if [ ! -f "$CURRENT_DIR/bin/opencode-tmux" ]; then
+    tmux display-message "opencode-tmux: missing bin/opencode-tmux in plugin directory"
     exit 0
   fi
 
@@ -183,11 +194,11 @@ main() {
     exit 0
   fi
 
-  switch_command="$popup_script --provider '$provider'"
-  waiting_switch_command="$popup_script --provider '$provider' --waiting"
-  status_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' OPENCODE_TMUX_STATUS_COLOR_BUSY='$status_color_busy' OPENCODE_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' OPENCODE_TMUX_STATUS_COLOR_IDLE='$status_color_idle' OPENCODE_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' bun run '$CURRENT_DIR/src/cli.ts' status --style '$status_style' --provider '$provider'"
-  bind_command="$menu_script --provider '$provider'"
-  waiting_bind_command="$menu_script --provider '$provider' --waiting"
+  switch_command="OPENCODE_TMUX_RUNNER='$runner' '$popup_script' --provider '$provider'"
+  waiting_switch_command="OPENCODE_TMUX_RUNNER='$runner' '$popup_script' --provider '$provider' --waiting"
+  status_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_RUNNER='$runner' OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' OPENCODE_TMUX_STATUS_COLOR_BUSY='$status_color_busy' OPENCODE_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' OPENCODE_TMUX_STATUS_COLOR_IDLE='$status_color_idle' OPENCODE_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/opencode-tmux' status --style '$status_style' --provider '$provider'"
+  bind_command="OPENCODE_TMUX_RUNNER='$runner' '$menu_script' --provider '$provider'"
+  waiting_bind_command="OPENCODE_TMUX_RUNNER='$runner' '$menu_script' --provider '$provider' --waiting"
 
   if [ -n "$server_map" ]; then
     switch_command="$switch_command --server-map '$server_map'"

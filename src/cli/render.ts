@@ -1,4 +1,4 @@
-import type { InspectResult, PaneRuntimeSummary } from "../types";
+import type { InspectResult, PaneRuntimeSummary } from "../types.ts";
 
 type StatusStyle = "plain" | "tmux";
 

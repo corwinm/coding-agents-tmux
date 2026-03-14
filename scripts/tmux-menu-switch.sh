@@ -3,7 +3,7 @@
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLI="$CURRENT_DIR/src/cli.ts"
+CLI="$CURRENT_DIR/bin/opencode-tmux"
 
 if [ ! -f "$CLI" ]; then
   tmux display-message "opencode-tmux: missing CLI at $CLI"
@@ -79,7 +79,7 @@ done
 LINES=()
 while IFS= read -r line; do
   LINES+=("$line")
-done < <(cd "$CURRENT_DIR" && bun run "$CLI" "${LIST_ARGS[@]}")
+done < <("$CLI" "${LIST_ARGS[@]}")
 
 if [ "${#LINES[@]}" -eq 0 ] || [ -z "${LINES[0]}" ]; then
   tmux display-message "opencode-tmux: no matching panes"
@@ -88,8 +88,7 @@ fi
 
 if [ "$waiting_only" = "on" ] && [ "${#LINES[@]}" -eq 1 ]; then
   IFS=$'\t' read -r target _ <<<"${LINES[0]}"
-  cd "$CURRENT_DIR"
-  bun run "$CLI" switch "${ARGS[@]}" "$target"
+  "$CLI" switch "${ARGS[@]}" "$target"
   exit 0
 fi
 
@@ -138,7 +137,7 @@ for line in "${LINES[@]}"; do
     key="$INDEX"
   fi
 
-  switch_command="cd $(shell_escape "$CURRENT_DIR") && bun run $(shell_escape "$CLI") switch"
+  switch_command="cd $(shell_escape "$CURRENT_DIR") && $(shell_escape "$CLI") switch"
   for arg in "${ARGS[@]}"; do
     switch_command="$switch_command $(shell_escape "$arg")"
   done

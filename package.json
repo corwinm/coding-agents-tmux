@@ -5,21 +5,20 @@
   "type": "module",
   "description": "CLI tooling for discovering and navigating opencode sessions running in tmux",
   "bin": {
-    "opencode-tmux": "src/cli.ts"
+    "opencode-tmux": "bin/opencode-tmux"
   },
   "scripts": {
-    "list": "bun run src/cli.ts list",
-    "dev": "bun run src/cli.ts",
-    "check": "bun run src/cli.ts --help"
+    "list": "./bin/opencode-tmux list",
+    "dev": "./bin/opencode-tmux",
+    "check": "./bin/opencode-tmux --help"
   },
   "engines": {
-    "bun": ">=1.3.0"
+    "node": ">=24.0.0"
   },
   "dependencies": {
     "commander": "^14.0.3"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.10",
     "@types/node": "^25.3.5"
   }
 }

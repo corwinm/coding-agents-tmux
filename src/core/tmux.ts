@@ -1,4 +1,5 @@
-import type { DiscoveredPane, DetectionConfidence, PaneTarget, PaneDetection, TmuxPane } from "../types";
+import type { DiscoveredPane, DetectionConfidence, PaneTarget, PaneDetection, TmuxPane } from "../types.ts";
+import { runCommand } from "../runtime.ts";
 
 const TMUX_FIELDS = [
   "#{session_name}",
@@ -59,16 +60,7 @@ export function detectOpencodePane(pane: TmuxPane): PaneDetection {
 
 export async function listAllPanes(): Promise<TmuxPane[]> {
   const command = ["tmux", "list-panes", "-a", "-F", TMUX_FIELDS.join("\t")];
-  const proc = Bun.spawn(command, {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [stdoutText, stderrText, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const { stdoutText, stderrText, exitCode } = await runCommand(command);
 
   if (exitCode !== 0) {
     const message = stderrText.trim() || "tmux list-panes failed";
@@ -144,16 +136,7 @@ export function findDiscoveredPaneByTarget(panes: DiscoveredPane[], target: Pane
 }
 
 export async function getCurrentTmuxTarget(): Promise<PaneTarget> {
-  const proc = Bun.spawn(["tmux", "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [stdoutText, stderrText, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
-  ]);
+  const { stdoutText, stderrText, exitCode } = await runCommand(["tmux", "display-message", "-p", "#{session_name}:#{window_index}.#{pane_index}"]);
 
   if (exitCode !== 0) {
     const message = stderrText.trim() || "tmux display-message failed";
@@ -170,12 +153,7 @@ export async function switchToPane(pane: TmuxPane): Promise<void> {
     ? ["tmux", "switch-client", "-t", pane.sessionName, ";", "select-window", "-t", windowTarget, ";", "select-pane", "-t", pane.target]
     : ["tmux", "attach-session", "-t", pane.sessionName, ";", "select-window", "-t", windowTarget, ";", "select-pane", "-t", pane.target];
 
-  const proc = Bun.spawn(command, {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [stderrText, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  const { stderrText, exitCode } = await runCommand(command);
 
   if (exitCode !== 0) {
     const message = stderrText.trim() || `failed to switch to ${pane.target}`;

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a TypeScript/Bun tool that helps track and navigate `opencode` instances running inside `tmux`.
+Build a TypeScript tool that runs on Node 24 by default and helps track and navigate `opencode` instances running inside `tmux`.
 
 The first version should be a standalone CLI. Later versions should add tmux-native UI surfaces while reusing the same core logic.
 
@@ -22,7 +22,7 @@ The first version should be a standalone CLI. Later versions should add tmux-nat
 - Start with a CLI-first architecture.
 - Keep tmux integration and opencode state detection in reusable modules.
 - Prefer a stable internal data model so future UI layers can consume the same output.
-- Use TypeScript/Bun from the start because this is expected to become a longer-lived tool.
+- Use TypeScript with Node 24 from the start because this is expected to become a longer-lived tool.
 
 ## Recommended Architecture
 
@@ -189,7 +189,7 @@ Known issues:
 
 ## Initial Recommendation
 
-Build the first release as a Bun-powered CLI with a clean split between:
+Build the first release as a Node 24 CLI with a clean split between:
 
 - tmux discovery
 - opencode state providers

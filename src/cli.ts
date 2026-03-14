@@ -1,5 +1,3 @@
-#!/usr/bin/env bun
-
 import { Command } from "commander";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createReadStream, createWriteStream } from "node:fs";
@@ -9,10 +7,11 @@ import { stdin as input, stdout as output } from "node:process";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { renderCompactPaneList, renderInspectResult, renderPaneTable, renderStatusSummary, renderSwitchChoices } from "./cli/render";
-import { attachRuntimeToPanes, buildServerMapTemplate, getRuntimeProviderHelpText } from "./core/opencode";
-import { discoverOpencodePanes, findDiscoveredPaneByTarget, getCurrentTmuxTarget, switchToPane } from "./core/tmux";
-import type { InspectResult, PaneFilterOptions, PaneRuntimeSummary, PaneTarget, RuntimeProviderOptions } from "./types";
+import { renderCompactPaneList, renderInspectResult, renderPaneTable, renderStatusSummary, renderSwitchChoices } from "./cli/render.ts";
+import { attachRuntimeToPanes, buildServerMapTemplate, getRuntimeProviderHelpText } from "./core/opencode.ts";
+import { discoverOpencodePanes, findDiscoveredPaneByTarget, getCurrentTmuxTarget, switchToPane } from "./core/tmux.ts";
+import { runCommand, sleep } from "./runtime.ts";
+import type { InspectResult, PaneFilterOptions, PaneRuntimeSummary, PaneTarget, RuntimeProviderOptions } from "./types.ts";
 
 interface ListOptions extends PaneFilterOptions, RuntimeProviderOptions {
   compact?: boolean;
@@ -54,7 +53,8 @@ interface InstallTmuxOptions extends TmuxConfigOptions {
   file?: string;
 }
 
-const CLI_PATH = fileURLToPath(import.meta.url);
+const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
+const CLI_PATH = join(REPO_ROOT, "bin", "opencode-tmux");
 
 async function loadPaneRuntimeSummaries(options: RuntimeProviderOptions = {}) {
   const panes = await discoverOpencodePanes();
@@ -98,11 +98,11 @@ function tmuxDoubleQuote(value: string): string {
 }
 
 function buildShellRunCommand(args: string[]): string {
-  return `cd ${shellEscape(process.cwd())} && bun run ${buildSelfCommand(args)}`;
+  return `cd ${shellEscape(process.cwd())} && ${buildSelfCommand(args)}`;
 }
 
 function buildPopupScriptCommand(args: string[]): string {
-  const scriptPath = `${process.cwd()}/scripts/tmux-popup-switch.sh`;
+  const scriptPath = join(REPO_ROOT, "scripts", "tmux-popup-switch.sh");
   return [scriptPath, ...args].map(shellEscape).join(" ");
 }
 
@@ -111,12 +111,7 @@ function buildSelfCommand(args: string[]): string {
 }
 
 async function runTmuxCommand(args: string[]): Promise<void> {
-  const proc = Bun.spawn(["tmux", ...args], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-
-  const [stderrText, exitCode] = await Promise.all([new Response(proc.stderr).text(), proc.exited]);
+  const { stderrText, exitCode } = await runCommand(["tmux", ...args]);
 
   if (exitCode !== 0) {
     throw new Error(stderrText.trim() || `tmux command failed: ${args.join(" ")}`);
@@ -153,7 +148,7 @@ async function watchListCommand(options: ListOptions): Promise<void> {
     console.log(`refresh every ${intervalSeconds}s`);
     console.log();
     console.log(renderListOutput(panesWithRuntime, options));
-    await Bun.sleep(intervalSeconds * 1000);
+    await sleep(intervalSeconds * 1000);
   }
 }
 
@@ -285,7 +280,7 @@ async function runSwitchFilteredCommand(target: string | undefined, options: Swi
 }
 
 async function runPopupCommand(options: PopupOptions): Promise<void> {
-  const switchArgs: string[] = [];
+  const switchArgs: string[] = ["switch"];
 
   if (options.provider) {
     switchArgs.push("--provider", options.provider);
@@ -555,7 +550,7 @@ async function main(): Promise<void> {
     .option("--file <path>", "Tmux config file to update")
     .action(runInstallTmuxCommand);
 
-  await program.parseAsync(Bun.argv);
+  await program.parseAsync(process.argv);
 }
 
 main().catch((error) => {

@@ -2,7 +2,7 @@
 
 ## Milestone 1: Project Bootstrap
 
-- Initialize a Bun + TypeScript project.
+- Initialize a Node 24 + TypeScript project.
 - Add a CLI entrypoint for `opencode-tmux`.
 - Set up basic source structure for `core`, `providers`, and `cli` modules.
 - Add linting, formatting, and a minimal test setup if appropriate.

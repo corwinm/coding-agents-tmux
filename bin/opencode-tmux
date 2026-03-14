@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CLI="$CURRENT_DIR/src/cli.ts"
+RUNNER="${OPENCODE_TMUX_RUNNER:-node}"
+
+if [ ! -f "$CLI" ]; then
+  printf 'opencode-tmux: missing CLI at %s\n' "$CLI" >&2
+  exit 1
+fi
+
+pick_runner() {
+  case "$RUNNER" in
+    auto|node|"")
+      if command -v node >/dev/null 2>&1; then
+        printf '%s' 'node'
+        return
+      fi
+      ;;
+    bun)
+      if command -v "$RUNNER" >/dev/null 2>&1; then
+        printf '%s' "$RUNNER"
+        return
+      fi
+      ;;
+  esac
+
+  printf 'opencode-tmux: unable to find requested runner (%s)\n' "$RUNNER" >&2
+  exit 1
+}
+
+SELECTED_RUNNER="$(pick_runner)"
+
+if [ "$SELECTED_RUNNER" = "node" ]; then
+  exec node --disable-warning=ExperimentalWarning "$CLI" "$@"
+fi
+
+exec "$SELECTED_RUNNER" "$CLI" "$@"

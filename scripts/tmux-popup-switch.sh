@@ -5,11 +5,7 @@ set -euo pipefail
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$CURRENT_DIR"
 
-CLI="$CURRENT_DIR/src/cli.ts"
-
-if [ -e /dev/tty ]; then
-  exec </dev/tty >/dev/tty 2>&1
-fi
+CLI="$CURRENT_DIR/bin/opencode-tmux"
 
 if [ ! -f "$CLI" ]; then
   printf 'opencode-tmux: missing CLI at %s\n' "$CLI" >&2
@@ -19,7 +15,7 @@ fi
 ARGS=("$@")
 
 run_cli() {
-  bun run "$CLI" "$@"
+  "$CLI" "$@"
 }
 
 truncate_value() {
@@ -52,7 +48,10 @@ for arg in "${ARGS[@]}"; do
   SWITCH_ARGS+=("$arg")
 done
 
-mapfile -t LINES < <(run_cli "${LIST_ARGS[@]}")
+LINES=()
+while IFS= read -r line; do
+  LINES+=("$line")
+done < <(run_cli "${LIST_ARGS[@]}")
 
 if [ "${#LINES[@]}" -eq 0 ] || [ -z "${LINES[0]}" ]; then
   printf 'No matching opencode panes found.\n'

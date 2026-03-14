@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -13,9 +12,37 @@ import type {
   RuntimeStatus,
   SessionMatch,
   TmuxPane,
-} from "../types";
+} from "../types.ts";
 
 const RECENT_SESSION_WINDOW_MS = 30 * 60 * 1000;
+
+interface SqliteStatement {
+  all(...params: unknown[]): unknown[];
+  get(...params: unknown[]): unknown;
+}
+
+interface SqliteDatabase {
+  close(): void;
+  prepare(sql: string): SqliteStatement;
+}
+
+interface SqliteDatabaseConstructor {
+  new (path: string, options?: { readonly?: boolean }): SqliteDatabase;
+}
+
+interface NodeSqliteDatabaseConstructor {
+  new (path: string, options?: { readOnly?: boolean }): {
+    close(): void;
+    prepare(sql: string): SqliteStatement;
+  };
+}
+
+interface BunSqliteDatabaseConstructor {
+  new (path: string, options?: { readonly?: boolean }): {
+    close(): void;
+    query(sql: string): SqliteStatement;
+  };
+}
 
 interface SessionRow {
   id: string;
@@ -68,19 +95,62 @@ function getPluginStateDir(): string {
   return process.env.OPENCODE_TMUX_STATE_DIR ? stateHome : join(stateHome, "opencode-tmux", "plugin-state");
 }
 
-function openDatabase(): Database {
+async function loadSqliteDatabaseConstructor(): Promise<SqliteDatabaseConstructor> {
+  if ("Bun" in globalThis) {
+    const loadBunModule = new Function('return import("bun:sqlite")') as () => Promise<{ Database: BunSqliteDatabaseConstructor }>;
+    const module = await loadBunModule();
+
+    return class WrappedBunDatabase implements SqliteDatabase {
+      private readonly database;
+
+      constructor(path: string, options?: { readonly?: boolean }) {
+        this.database = new module.Database(path, options);
+      }
+
+      close(): void {
+        this.database.close();
+      }
+
+      prepare(sql: string): SqliteStatement {
+        return this.database.query(sql);
+      }
+    };
+  }
+
+  const loadNodeModule = new Function('return import("node:sqlite")') as () => Promise<{ DatabaseSync: NodeSqliteDatabaseConstructor }>;
+  const module = await loadNodeModule();
+
+  return class WrappedNodeDatabase implements SqliteDatabase {
+    private readonly database;
+
+    constructor(path: string, options?: { readonly?: boolean }) {
+      this.database = new module.DatabaseSync(path, { readOnly: options?.readonly });
+    }
+
+    close(): void {
+      this.database.close();
+    }
+
+    prepare(sql: string): SqliteStatement {
+      return this.database.prepare(sql);
+    }
+  };
+}
+
+async function openDatabase(): Promise<SqliteDatabase> {
   const databasePath = getOpencodeDbPath();
 
   if (!existsSync(databasePath)) {
     throw new Error(`opencode database not found at ${databasePath}`);
   }
 
+  const Database = await loadSqliteDatabaseConstructor();
   return new Database(databasePath, { readonly: true });
 }
 
-function getSessionMatch(database: Database, directory: string): SessionMatch | null {
+function getSessionMatch(database: SqliteDatabase, directory: string): SessionMatch | null {
   const row = database
-    .query(
+    .prepare(
       `
         SELECT id, directory, title, time_updated
         FROM session
@@ -107,11 +177,11 @@ function toSessionMatch(row: SessionRow): SessionMatch {
   };
 }
 
-function getDescendantSessions(database: Database, directory: string): SessionMatch[] {
+function getDescendantSessions(database: SqliteDatabase, directory: string): SessionMatch[] {
   const normalizedDirectory = directory.endsWith("/") ? directory : `${directory}/`;
 
   const rows = database
-    .query(
+    .prepare(
       `
         SELECT id, directory, title, time_updated
         FROM session
@@ -124,9 +194,9 @@ function getDescendantSessions(database: Database, directory: string): SessionMa
   return rows.map(toSessionMatch);
 }
 
-function getRunningPart(database: Database, sessionId: string): RunningPartRow | null {
+function getRunningPart(database: SqliteDatabase, sessionId: string): RunningPartRow | null {
   return database
-    .query(
+    .prepare(
       `
         SELECT
           json_extract(data, '$.tool') AS tool,
@@ -142,9 +212,9 @@ function getRunningPart(database: Database, sessionId: string): RunningPartRow |
     .get(sessionId) as RunningPartRow | null;
 }
 
-function getWorkflowState(database: Database, sessionId: string): WorkflowStateRow | null {
+function getWorkflowState(database: SqliteDatabase, sessionId: string): WorkflowStateRow | null {
   return database
-    .query(
+    .prepare(
       `
         SELECT
           MAX(CASE WHEN json_extract(data, '$.type') = 'step-start' THEN time_updated END) AS last_step_start,
@@ -397,7 +467,7 @@ function classifyRuntimeWithSource(
   };
 }
 
-function getHeuristicSessionMatch(database: Database, directory: string): HeuristicSessionMatch | null {
+function getHeuristicSessionMatch(database: SqliteDatabase, directory: string): HeuristicSessionMatch | null {
   const descendants = getDescendantSessions(database, directory);
 
   if (descendants.length === 0) {
@@ -460,11 +530,11 @@ function getHeuristicSessionMatch(database: Database, directory: string): Heuris
   return null;
 }
 
-function attachRuntimeWithSqlite(panes: DiscoveredPane[]): PaneRuntimeSummary[] {
-  let database: Database;
+async function attachRuntimeWithSqlite(panes: DiscoveredPane[]): Promise<PaneRuntimeSummary[]> {
+  let database: SqliteDatabase;
 
   try {
-    database = openDatabase();
+    database = await openDatabase();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
 
@@ -736,7 +806,7 @@ async function attachRuntimeWithServerMap(
   options: RuntimeProviderOptions,
   fallbackToSqlite: boolean,
 ): Promise<PaneRuntimeSummary[]> {
-  const sqliteFallback = fallbackToSqlite ? attachRuntimeWithSqlite(panes) : null;
+  const sqliteFallback = fallbackToSqlite ? await attachRuntimeWithSqlite(panes) : null;
   const serverMap = parseServerMap(options.serverMap);
 
   const results = await Promise.all(
