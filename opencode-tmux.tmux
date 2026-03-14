@@ -37,6 +37,81 @@ append_status_segment() {
   fi
 }
 
+replace_status_placeholder() {
+  local option_name="$1"
+  local segment="$2"
+  shift 2
+  local existing updated placeholder replaced=1
+  existing="$(tmux show-option -gqv "$option_name")"
+  updated="$existing"
+
+  for placeholder in "$@"; do
+    if [[ "$updated" == *"$placeholder"* ]]; then
+      updated="${updated//$placeholder/$segment}"
+      replaced=0
+    fi
+  done
+
+  if [ "$replaced" -ne 0 ]; then
+    return 1
+  fi
+
+  tmux set-option -g "$option_name" "$updated"
+}
+
+catppuccin_loaded() {
+  [ -n "$(tmux show-option -gqv @catppuccin_status_left_separator)" ]
+}
+
+configure_catppuccin_status_module() {
+  local text_segment="$1"
+  local prefix="$2"
+  local accent_color="$3"
+  local waiting_color="$4"
+  local idle_color="$5"
+  local unknown_color="$6"
+  local left_separator right_separator middle_separator status_fill connect_separator connect_style theme_crust theme_fg status_bg accent_format
+  local middle_style right_style module
+
+  if [ -z "$text_segment" ] || ! catppuccin_loaded; then
+    tmux set-option -gu @catppuccin_opencode_icon
+    tmux set-option -gu @catppuccin_opencode_color
+    tmux set-option -gu @catppuccin_opencode_text
+    tmux set-option -gu @catppuccin_status_opencode
+    return
+  fi
+
+  tmux set-option -gq @catppuccin_opencode_icon "$prefix "
+  accent_format="#{?#{==:#{E:@opencode-tmux-status-tone},waiting},$waiting_color,#{?#{==:#{E:@opencode-tmux-status-tone},idle},$idle_color,#{?#{==:#{E:@opencode-tmux-status-tone},unknown},$unknown_color,$accent_color}}}"
+  tmux set-option -gq @catppuccin_opencode_color "$accent_format"
+  tmux set-option -gq @catppuccin_opencode_text "$text_segment"
+
+  left_separator="$(tmux show-option -gqv @catppuccin_status_left_separator)"
+  right_separator="$(tmux show-option -gqv @catppuccin_status_right_separator)"
+  middle_separator="$(tmux show-option -gqv @catppuccin_status_middle_separator)"
+  status_fill="$(tmux show-option -gqv @catppuccin_status_fill)"
+  connect_separator="$(tmux show-option -gqv @catppuccin_status_connect_separator)"
+  theme_crust="$(tmux show-option -gqv @thm_crust)"
+  theme_fg="$(tmux show-option -gqv @thm_fg)"
+  status_bg="$(tmux show-option -gqv @_ctp_status_bg)"
+  connect_style='#[bg=default]'
+
+  if [ "$connect_separator" = 'yes' ]; then
+    connect_style=''
+  fi
+
+  if [ "$status_fill" = 'icon' ]; then
+    middle_style="#[fg=#{E:@catppuccin_opencode_color},bg=$status_bg]$middle_separator#[fg=$theme_fg] "
+    right_style="#[fg=$status_bg]$connect_style$right_separator"
+  else
+    middle_style="#[fg=#{E:@catppuccin_opencode_color}]$middle_separator#[fg=$theme_crust]"
+    right_style="#[fg=#{E:@catppuccin_opencode_color}]$connect_style$right_separator"
+  fi
+
+  module="#[fg=#{E:@catppuccin_opencode_color},nobold,nounderscore,noitalics]$connect_style$left_separator#[fg=$theme_crust,bg=#{E:@catppuccin_opencode_color}]${prefix} $middle_style#{E:@catppuccin_opencode_text}$right_style"
+  tmux set-option -gq @catppuccin_status_opencode "$module"
+}
+
 remove_status_segment() {
   local option_name="$1"
   local segment="$2"
@@ -77,6 +152,18 @@ normalize_launcher() {
       ;;
     *)
       printf '%s' 'menu'
+      ;;
+  esac
+}
+
+normalize_status_mode() {
+  local mode="$1"
+  case "$mode" in
+    append|manual|"")
+      printf '%s' "${mode:-manual}"
+      ;;
+    *)
+      printf '%s' 'manual'
       ;;
   esac
 }
@@ -159,7 +246,7 @@ install_opencode_plugin() {
 }
 
 main() {
-  local key waiting_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval launcher install_plugin
+  local key waiting_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode launcher install_plugin status_text_segment status_inline_segment status_tone_segment
   local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown
   local previous_status_segment previous_status_option
   key="$(get_tmux_option '@opencode-tmux-key' 'O')"
@@ -175,6 +262,7 @@ main() {
   status_enabled="$(get_tmux_option '@opencode-tmux-status' 'on')"
   status_style="$(get_tmux_option '@opencode-tmux-status-style' 'tmux')"
   status_position="$(get_tmux_option '@opencode-tmux-status-position' 'right')"
+  status_mode="$(normalize_status_mode "$(get_tmux_option '@opencode-tmux-status-mode' 'manual')")"
   status_interval="$(get_tmux_option '@opencode-tmux-status-interval' '1')"
   status_prefix="$(get_tmux_option '@opencode-tmux-status-prefix' 'OC')"
   status_color_neutral="$(get_tmux_option '@opencode-tmux-status-color-neutral' 'colour252')"
@@ -209,7 +297,7 @@ main() {
       ;;
   esac
 
-  local switch_command waiting_switch_command status_command popup_script menu_script bind_command waiting_bind_command
+  local switch_command waiting_switch_command status_command status_text_command status_inline_command status_tone_command popup_script menu_script bind_command waiting_bind_command
   popup_script="$CURRENT_DIR/scripts/tmux-popup-switch.sh"
   menu_script="$CURRENT_DIR/scripts/tmux-menu-switch.sh"
 
@@ -226,6 +314,9 @@ main() {
   switch_command="'$popup_script' --provider '$provider'"
   waiting_switch_command="'$popup_script' --provider '$provider' --waiting"
   status_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' OPENCODE_TMUX_STATUS_COLOR_BUSY='$status_color_busy' OPENCODE_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' OPENCODE_TMUX_STATUS_COLOR_IDLE='$status_color_idle' OPENCODE_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/opencode-tmux' status --style '$status_style' --provider '$provider'"
+  status_text_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_SHOW_PREFIX='off' '$CURRENT_DIR/bin/opencode-tmux' status --style 'plain' --provider '$provider'"
+  status_inline_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_SHOW_PREFIX='off' OPENCODE_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' OPENCODE_TMUX_STATUS_COLOR_BUSY='$status_color_busy' OPENCODE_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' OPENCODE_TMUX_STATUS_COLOR_IDLE='$status_color_idle' OPENCODE_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/opencode-tmux' status --style 'tmux' --provider '$provider'"
+  status_tone_command="cd '$CURRENT_DIR' && '$CURRENT_DIR/bin/opencode-tmux' status --tone --provider '$provider'"
   bind_command="'$menu_script' --provider '$provider'"
   waiting_bind_command="'$menu_script' --provider '$provider' --waiting"
 
@@ -233,6 +324,9 @@ main() {
     switch_command="$switch_command --server-map '$server_map'"
     waiting_switch_command="$waiting_switch_command --server-map '$server_map'"
     status_command="$status_command --server-map '$server_map'"
+    status_text_command="$status_text_command --server-map '$server_map'"
+    status_inline_command="$status_inline_command --server-map '$server_map'"
+    status_tone_command="$status_tone_command --server-map '$server_map'"
     bind_command="$bind_command --server-map '$server_map'"
     waiting_bind_command="$waiting_bind_command --server-map '$server_map'"
   fi
@@ -257,11 +351,57 @@ main() {
   if [ "$status_enabled" = "on" ]; then
     local current_status_segment
     current_status_segment="#($status_command)"
+    status_text_segment="#($status_text_command)"
+    status_inline_segment="#($status_inline_command)"
+    status_tone_segment="#($status_tone_command)"
     tmux set-option -g status-interval "$status_interval"
-    append_status_segment "$status_option" "$current_status_segment"
-    tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
-    tmux set-option -gq @opencode-tmux-status-option "$status_option"
+    tmux set-option -gq @opencode-tmux-status-format "$current_status_segment"
+    tmux set-option -gq @opencode-tmux-status-text "$status_text_segment"
+    tmux set-option -gq @opencode-tmux-status-inline-format "$status_inline_segment"
+    tmux set-option -gq @opencode-tmux-status-tone "$status_tone_segment"
+    configure_catppuccin_status_module "$status_text_segment" "$status_prefix" "$status_color_busy" "$status_color_waiting" "$status_color_idle" "$status_color_unknown"
+
+    if [ "$status_mode" = "append" ]; then
+      append_status_segment "$status_option" "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option "$status_option"
+    elif replace_status_placeholder "$status_option" "$current_status_segment" '#{E:@opencode-tmux-status-format}' '#{@opencode-tmux-status-format}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option "$status_option"
+    elif replace_status_placeholder "$status_option" "$status_text_segment" '#{E:@opencode-tmux-status-text}' '#{@opencode-tmux-status-text}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option "$status_option"
+    elif replace_status_placeholder "$status_option" "$status_inline_segment" '#{E:@opencode-tmux-status-inline-format}' '#{@opencode-tmux-status-inline-format}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option "$status_option"
+    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$current_status_segment" '#{E:@opencode-tmux-status-format}' '#{@opencode-tmux-status-format}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option 'status-left'
+    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$status_text_segment" '#{E:@opencode-tmux-status-text}' '#{@opencode-tmux-status-text}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option 'status-left'
+    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$status_inline_segment" '#{E:@opencode-tmux-status-inline-format}' '#{@opencode-tmux-status-inline-format}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option 'status-left'
+    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$current_status_segment" '#{E:@opencode-tmux-status-format}' '#{@opencode-tmux-status-format}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option 'status-right'
+    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$status_text_segment" '#{E:@opencode-tmux-status-text}' '#{@opencode-tmux-status-text}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option 'status-right'
+    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$status_inline_segment" '#{E:@opencode-tmux-status-inline-format}' '#{@opencode-tmux-status-inline-format}'; then
+      tmux set-option -gq @opencode-tmux-status-segment "$current_status_segment"
+      tmux set-option -gq @opencode-tmux-status-option 'status-right'
+    else
+      tmux set-option -gu @opencode-tmux-status-segment
+      tmux set-option -gu @opencode-tmux-status-option
+    fi
   else
+    tmux set-option -gu @opencode-tmux-status-format
+    tmux set-option -gu @opencode-tmux-status-text
+    tmux set-option -gu @opencode-tmux-status-inline-format
+    tmux set-option -gu @opencode-tmux-status-tone
+    configure_catppuccin_status_module '' "$status_prefix" "$status_color_busy" "$status_color_waiting" "$status_color_idle" "$status_color_unknown"
     tmux set-option -gu @opencode-tmux-status-segment
     tmux set-option -gu @opencode-tmux-status-option
   fi

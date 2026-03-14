@@ -140,6 +140,8 @@ This means:
 - `OC | busy | 1 wait` means the focused pane is busy and one background pane is waiting for input
 - `OC | new | none` means the focused pane is newly started and there are no other detected `opencode` panes
 
+If your active pane is not an `opencode` pane, the status line uses the strongest detected `opencode` pane in the current tmux window. `opencode` panes in other windows are counted as background work.
+
 Background summary priority is:
 
 - `wait` first
@@ -157,6 +159,38 @@ set -g @opencode-tmux-status-position 'right'
 set -g @opencode-tmux-status-interval '1'
 ```
 
+By default the plugin now uses manual mode so your theme can place the segment itself.
+
+For Catppuccin, use the native module the plugin exports:
+
+```tmux
+set -g @opencode-tmux-status 'on'
+set -g @opencode-tmux-status-mode 'manual'
+
+set -g status-right "#{E:@catppuccin_status_session}"
+set -ag status-right "#{E:@catppuccin_status_directory}"
+set -ag status-right "#{E:@catppuccin_status_opencode}"
+```
+
+For other themes, use the tone-aware inline export if you want the summary colors to follow busy/waiting/idle/unknown automatically:
+
+```tmux
+set -g @opencode-tmux-status 'on'
+set -g @opencode-tmux-status-mode 'manual'
+
+set -ag status-right " #{@opencode-tmux-status-inline-format}"
+```
+
+If you want to fully control the wrapper yourself, use the plain text export instead:
+
+```tmux
+set -ag status-right " #[fg=colour81]󰆍 #[default]#{@opencode-tmux-status-text}"
+```
+
+`manual` mode is the default. `#{E:@catppuccin_status_opencode}` gives Catppuccin users a native-looking module, `#{@opencode-tmux-status-inline-format}` gives other themes a tone-aware inline segment, and `#{@opencode-tmux-status-text}` gives a plain live summary text export for fully custom wrappers. `append` mode restores the old behavior and appends automatically.
+
+When using the Catppuccin module, the segment reuses your configured `@opencode-tmux-status-color-*` palette: busy stays on the busy color, waiting turns to the waiting color, idle turns to the idle color, and no detected panes falls back to the unknown color.
+
 ## Configuration
 
 Available tmux options:
@@ -173,6 +207,7 @@ Available tmux options:
 - `@opencode-tmux-popup-title` popup title, default `OpenCode Sessions`
 - `@opencode-tmux-status` `on` or `off`, default `on`
 - `@opencode-tmux-status-style` `plain` or `tmux`, default `tmux`
+- `@opencode-tmux-status-mode` `append` or `manual`, default `manual`
 - `@opencode-tmux-status-position` `right` or `left`, default `right`
 - `@opencode-tmux-status-interval` tmux `status-interval`, default `1`
 - `@opencode-tmux-status-prefix` label shown before the status summary, default `OC`

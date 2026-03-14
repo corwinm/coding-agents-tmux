@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { promptForPopupSelection } from "./cli/popup.ts";
-import { renderCompactPaneList, renderInspectResult, renderPaneTable, renderStatusSummary, renderSwitchChoices } from "./cli/render.ts";
+import { renderCompactPaneList, renderInspectResult, renderPaneTable, renderStatusSummary, renderStatusTone, renderSwitchChoices } from "./cli/render.ts";
 import { attachRuntimeToPanes, buildServerMapTemplate, getRuntimeProviderHelpText } from "./core/opencode.ts";
 import { discoverOpencodePanes, findDiscoveredPaneByTarget, getCurrentTmuxTarget, switchToPane } from "./core/tmux.ts";
 import { runCommand, sleep } from "./runtime.ts";
@@ -45,6 +45,7 @@ interface StatusOptions extends RuntimeProviderOptions {
   json?: boolean;
   summary?: boolean;
   style?: "plain" | "tmux";
+  tone?: boolean;
 }
 
 interface TmuxConfigOptions extends RuntimeProviderOptions {
@@ -54,6 +55,57 @@ interface TmuxConfigOptions extends RuntimeProviderOptions {
 
 interface InstallTmuxOptions extends TmuxConfigOptions {
   file?: string;
+}
+
+function getWindowKey(sessionName: string, windowIndex: number): string {
+  return `${sessionName}:${windowIndex}`;
+}
+
+function getPaneWindowKey(entry: PaneRuntimeSummary): string {
+  return getWindowKey(entry.pane.sessionName, entry.pane.windowIndex);
+}
+
+function getWindowKeyFromTarget(target: string): string {
+  const match = target.match(/^(.*):(\d+)\.\d+$/);
+
+  if (!match || match[1] === undefined || match[2] === undefined) {
+    throw new Error(`Unexpected tmux target: ${target}`);
+  }
+
+  return getWindowKey(match[1], Number(match[2]));
+}
+
+function getStatusRepresentativePriority(entry: PaneRuntimeSummary): number {
+  switch (entry.runtime.status) {
+    case "waiting-question":
+    case "waiting-input":
+      return 5;
+    case "running":
+      return 4;
+    case "new":
+      return 3;
+    case "idle":
+      return 2;
+    default:
+      return 1;
+  }
+}
+
+function pickWindowStatusRepresentative(entries: PaneRuntimeSummary[]): PaneRuntimeSummary | null {
+  return entries.reduce<PaneRuntimeSummary | null>((best, entry) => {
+    if (!best) {
+      return entry;
+    }
+
+    const bestPriority = getStatusRepresentativePriority(best);
+    const entryPriority = getStatusRepresentativePriority(entry);
+
+    if (entryPriority !== bestPriority) {
+      return entryPriority > bestPriority ? entry : best;
+    }
+
+    return entry.pane.target.localeCompare(best.pane.target) < 0 ? entry : best;
+  }, null);
 }
 
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
@@ -370,6 +422,11 @@ async function runStatusCommand(options: StatusOptions): Promise<void> {
   const renderOptions = options.style ? { style: options.style } : {};
 
   if (options.summary || !process.env.TMUX) {
+    if (options.tone) {
+      console.log(renderStatusTone(null, panes));
+      return;
+    }
+
     if (options.json) {
       const busy = panes.filter((entry) => entry.runtime.activity === "busy").length;
       const waiting = panes.filter((entry) => entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input").length;
@@ -382,15 +439,23 @@ async function runStatusCommand(options: StatusOptions): Promise<void> {
   }
 
   const currentTarget = await getCurrentTmuxTarget();
-  const current = panes.find((entry) => entry.pane.target === currentTarget) ?? null;
+  const currentWindowKey = getWindowKeyFromTarget(currentTarget);
+  const currentWindowPanes = panes.filter((entry) => getPaneWindowKey(entry) === currentWindowKey);
+  const current = panes.find((entry) => entry.pane.target === currentTarget) ?? pickWindowStatusRepresentative(currentWindowPanes);
+  const scopedPanes = current ? [current, ...panes.filter((entry) => getPaneWindowKey(entry) !== currentWindowKey)] : panes;
   const currentRenderOptions = options.style ? { style: options.style, includeCurrentPlaceholder: true } : { includeCurrentPlaceholder: true };
 
-  if (options.json) {
-    console.log(JSON.stringify({ mode: "current", target: currentTarget, current, summary: renderStatusSummary(current, panes, currentRenderOptions) }, null, 2));
+  if (options.tone) {
+    console.log(renderStatusTone(current, scopedPanes));
     return;
   }
 
-  console.log(renderStatusSummary(current, panes, currentRenderOptions));
+  if (options.json) {
+    console.log(JSON.stringify({ mode: "current", target: currentTarget, current, summary: renderStatusSummary(current, scopedPanes, currentRenderOptions) }, null, 2));
+    return;
+  }
+
+  console.log(renderStatusSummary(current, scopedPanes, currentRenderOptions));
 }
 
 function getPopupFilterArgs(filter: TmuxConfigOptions["popupFilter"]): string[] {
@@ -553,6 +618,7 @@ async function main(): Promise<void> {
     .description("Print a tmux-friendly status summary")
     .option("--json", "Print machine-readable JSON")
     .option("--summary", "Summarize all discovered opencode panes instead of the current tmux pane")
+    .option("--tone", "Print only the current summary tone")
     .option("--style <style>", "Status output style: plain or tmux", "plain")
     .option("--provider <provider>", "Runtime provider: auto, plugin, sqlite, or server", "auto")
     .option("--server-map <value>", "JSON object or file path mapping pane targets to server endpoints")

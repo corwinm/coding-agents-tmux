@@ -13,6 +13,7 @@ const statusToneColors: Record<StatusTone, string> = {
 };
 
 const statusPrefix = process.env.OPENCODE_TMUX_STATUS_PREFIX ?? "OC";
+const statusShowPrefix = !["0", "false", "no", "off"].includes((process.env.OPENCODE_TMUX_STATUS_SHOW_PREFIX ?? "on").toLowerCase());
 
 const columns = ["TARGET", "ACTIVE", "ACT", "STATUS", "SRC", "CONF", "SESSION", "TITLE", "PATH", "SIGNALS"] as const;
 
@@ -250,6 +251,32 @@ function getCurrentLabel(entry: PaneRuntimeSummary): string {
   return entry.runtime.activity;
 }
 
+function isWaitingEntry(entry: PaneRuntimeSummary): boolean {
+  return entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input";
+}
+
+export function renderStatusTone(current: PaneRuntimeSummary | null, panes: PaneRuntimeSummary[]): StatusTone {
+  const backgroundPanes = current ? panes.filter((entry) => entry.pane.target !== current.pane.target) : panes;
+
+  if ((current && isWaitingEntry(current)) || backgroundPanes.some(isWaitingEntry)) {
+    return "waiting";
+  }
+
+  if (current) {
+    return getActivityTone(current);
+  }
+
+  if (panes.some((entry) => entry.runtime.activity === "busy")) {
+    return "busy";
+  }
+
+  if (panes.some((entry) => entry.runtime.activity === "idle")) {
+    return "idle";
+  }
+
+  return "unknown";
+}
+
 function renderBackgroundSummary(panes: PaneRuntimeSummary[], style: StatusStyle): string[] {
   if (panes.length === 0) {
     return [formatStatusToken("none", "unknown", style)];
@@ -294,13 +321,28 @@ export function renderStatusSummary(
 
   if (current) {
     const backgroundPanes = panes.filter((entry) => entry.pane.target !== current.pane.target);
+    const parts = [...renderCurrentSummary(current, style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(backgroundPanes, style)];
 
-    return [formatStatusToken(statusPrefix, "neutral", style), formatStatusToken("|", "neutral", style), ...renderCurrentSummary(current, style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(backgroundPanes, style)].join(" ");
+    if (statusShowPrefix) {
+      return [formatStatusToken(statusPrefix, "neutral", style), formatStatusToken("|", "neutral", style), ...parts].join(" ");
+    }
+
+    return parts.join(" ");
   }
 
   if (options.includeCurrentPlaceholder) {
-    return [formatStatusToken(statusPrefix, "neutral", style), formatStatusToken("|", "neutral", style), ...renderCurrentSummary(null, style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(panes, style)].join(" ");
+    const parts = [...renderCurrentSummary(null, style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(panes, style)];
+
+    if (statusShowPrefix) {
+      return [formatStatusToken(statusPrefix, "neutral", style), formatStatusToken("|", "neutral", style), ...parts].join(" ");
+    }
+
+    return parts.join(" ");
   }
 
-  return [formatStatusToken(statusPrefix, "neutral", style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(panes, style)].join(" ");
+  if (statusShowPrefix) {
+    return [formatStatusToken(statusPrefix, "neutral", style), formatStatusToken("|", "neutral", style), ...renderBackgroundSummary(panes, style)].join(" ");
+  }
+
+  return renderBackgroundSummary(panes, style).join(" ");
 }
