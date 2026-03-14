@@ -379,6 +379,20 @@ export async function promptForPopupSelection(options: PopupSelectorOptions): Pr
         return;
       }
 
+      if (quickSelectPending && value === "\u001b") {
+        clearQuickSelect();
+        message = "";
+        render();
+        return;
+      }
+
+      if (quickSelectPending && value === "\u0007") {
+        clearQuickSelect();
+        message = "";
+        render();
+        return;
+      }
+
       if (value === "\u001b") {
         settle(null);
         return;
