@@ -49,7 +49,10 @@ interface StatusOptions extends RuntimeProviderOptions {
 }
 
 interface TmuxConfigOptions extends RuntimeProviderOptions {
-  key?: string;
+  menuKey?: string;
+  popupKey?: string;
+  waitingMenuKey?: string;
+  waitingPopupKey?: string;
   popupFilter?: "all" | "busy" | "waiting" | "running" | "active";
 }
 
@@ -158,6 +161,11 @@ function buildShellRunCommand(args: string[]): string {
 
 function buildPopupScriptCommand(args: string[]): string {
   const scriptPath = join(REPO_ROOT, "scripts", "tmux-popup-switch.sh");
+  return [scriptPath, ...args].map(shellEscape).join(" ");
+}
+
+function buildMenuScriptCommand(args: string[]): string {
+  const scriptPath = join(REPO_ROOT, "scripts", "tmux-menu-switch.sh");
   return [scriptPath, ...args].map(shellEscape).join(" ");
 }
 
@@ -483,27 +491,39 @@ function escapeRegExp(value: string): string {
 
 function buildTmuxSnippet(options: TmuxConfigOptions): string {
   const switchArgs: string[] = [];
+  const waitingArgs: string[] = ["--waiting"];
   const statusArgs = ["status", "--style", "tmux"];
 
   if (options.provider) {
     switchArgs.push("--provider", options.provider);
+    waitingArgs.push("--provider", options.provider);
     statusArgs.push("--provider", options.provider);
   }
 
   if (options.serverMap) {
     switchArgs.push("--server-map", options.serverMap);
+    waitingArgs.push("--server-map", options.serverMap);
     statusArgs.push("--server-map", options.serverMap);
   }
 
   switchArgs.push(...getPopupFilterArgs(options.popupFilter));
 
-  const switchCommand = buildPopupScriptCommand(switchArgs);
+  const popupCommand = buildPopupScriptCommand(switchArgs);
+  const waitingPopupCommand = buildPopupScriptCommand(waitingArgs);
+  const menuCommand = buildMenuScriptCommand(switchArgs);
+  const waitingMenuCommand = buildMenuScriptCommand(waitingArgs);
   const statusCommand = buildShellRunCommand(statusArgs);
-  const key = options.key ?? "O";
+  const menuKey = options.menuKey ?? "O";
+  const popupKey = options.popupKey ?? "P";
+  const waitingMenuKey = options.waitingMenuKey ?? "W";
+  const waitingPopupKey = options.waitingPopupKey ?? "C-w";
 
   return [
     "# >>> opencode-tmux >>>",
-    `bind-key ${key} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("OpenCode Sessions")} ${tmuxDoubleQuote(switchCommand)}`,
+    `bind-key ${menuKey} run-shell ${tmuxDoubleQuote(menuCommand)}`,
+    `bind-key ${popupKey} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("OpenCode Sessions")} ${tmuxDoubleQuote(popupCommand)}`,
+    `bind-key ${waitingMenuKey} run-shell ${tmuxDoubleQuote(waitingMenuCommand)}`,
+    `bind-key ${waitingPopupKey} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("OpenCode Sessions (Waiting)")} ${tmuxDoubleQuote(waitingPopupCommand)}`,
     `set -g status-right ${tmuxDoubleQuote(`#(${statusCommand})`)}`,
     "# <<< opencode-tmux <<<",
   ].join("\n");
@@ -629,7 +649,10 @@ async function main(): Promise<void> {
     .description("Print a tmux config snippet for popup and status-line integration")
     .option("--provider <provider>", "Runtime provider: auto, plugin, sqlite, or server", "auto")
     .option("--server-map <value>", "JSON object or file path mapping pane targets to server endpoints")
-    .option("--key <key>", "Tmux key binding for popup chooser", "O")
+    .option("--menu-key <key>", "Tmux key binding for the menu chooser", "O")
+    .option("--popup-key <key>", "Tmux key binding for the popup chooser", "P")
+    .option("--waiting-menu-key <key>", "Tmux key binding for the waiting-only menu chooser", "W")
+    .option("--waiting-popup-key <key>", "Tmux key binding for the waiting-only popup chooser", "C-w")
     .option("--popup-filter <filter>", "Popup default filter: all, busy, waiting, running, or active", "all")
     .action(runTmuxConfigCommand);
 
@@ -638,7 +661,10 @@ async function main(): Promise<void> {
     .description("Install or update an opencode-tmux snippet in a tmux config file")
     .option("--provider <provider>", "Runtime provider: auto, plugin, sqlite, or server", "auto")
     .option("--server-map <value>", "JSON object or file path mapping pane targets to server endpoints")
-    .option("--key <key>", "Tmux key binding for popup chooser", "O")
+    .option("--menu-key <key>", "Tmux key binding for the menu chooser", "O")
+    .option("--popup-key <key>", "Tmux key binding for the popup chooser", "P")
+    .option("--waiting-menu-key <key>", "Tmux key binding for the waiting-only menu chooser", "W")
+    .option("--waiting-popup-key <key>", "Tmux key binding for the waiting-only popup chooser", "C-w")
     .option("--popup-filter <filter>", "Popup default filter: all, busy, waiting, running, or active", "all")
     .option("--file <path>", "Tmux config file to update")
     .action(runInstallTmuxCommand);

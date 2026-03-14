@@ -21,9 +21,10 @@ Recommended settings:
 
 ```tmux
 set -g @opencode-tmux-provider 'plugin'
-set -g @opencode-tmux-key 'O'
-set -g @opencode-tmux-waiting-key 'W'
-set -g @opencode-tmux-launcher 'menu'
+set -g @opencode-tmux-menu-key 'O'
+set -g @opencode-tmux-popup-key 'P'
+set -g @opencode-tmux-waiting-menu-key 'W'
+set -g @opencode-tmux-waiting-popup-key 'C-w'
 set -g @opencode-tmux-status 'on'
 set -g @opencode-tmux-status-style 'tmux'
 set -g @opencode-tmux-status-position 'right'
@@ -85,10 +86,12 @@ set -g @opencode-tmux-install-opencode-plugin 'off'
 
 Default key bindings:
 
-- `prefix + O` opens the main session chooser
-- `prefix + W` jumps to the only waiting session, or opens a waiting-only chooser if there are multiple
+- `prefix + O` opens the main menu chooser
+- `prefix + P` opens the main popup chooser
+- `prefix + W` jumps to the only waiting session, or opens a waiting-only menu if there are multiple
+- `prefix + C-w` opens the waiting-only popup chooser
 
-Default launcher behavior:
+Launcher behavior:
 
 - `menu` uses a tmux menu and is the most reliable option
 - `popup` opens a popup chooser if you prefer a larger interactive view
@@ -101,17 +104,16 @@ Inside the popup you can do more than pick a row number:
 - press `Enter` to switch to the selected pane
 - press `Esc` to close the popup or `Ctrl-R` to refresh the live pane list
 
-Set the launcher explicitly with:
+You can configure each binding independently:
 
 ```tmux
-set -g @opencode-tmux-launcher 'menu'
+set -g @opencode-tmux-menu-key 'O'
+set -g @opencode-tmux-popup-key 'P'
+set -g @opencode-tmux-waiting-menu-key 'W'
+set -g @opencode-tmux-waiting-popup-key 'C-w'
 ```
 
-or:
-
-```tmux
-set -g @opencode-tmux-launcher 'popup'
-```
+Set any of them to `off` to disable that binding.
 
 ## Status Line
 
@@ -195,9 +197,10 @@ When using the Catppuccin module, the segment reuses your configured `@opencode-
 
 Available tmux options:
 
-- `@opencode-tmux-key` main chooser key, default `O`
-- `@opencode-tmux-waiting-key` waiting-only key, default `W`
-- `@opencode-tmux-launcher` `menu` or `popup`, default `menu`
+- `@opencode-tmux-menu-key` main menu chooser key, default `O`
+- `@opencode-tmux-popup-key` main popup chooser key, default `P`
+- `@opencode-tmux-waiting-menu-key` waiting-only menu chooser key, default `W`
+- `@opencode-tmux-waiting-popup-key` waiting-only popup chooser key, default `C-w`
 - `@opencode-tmux-install-opencode-plugin` `on` or `off`, default `on`
 - `@opencode-tmux-provider` `auto`, `plugin`, `sqlite`, or `server`
 - `@opencode-tmux-server-map` JSON object or JSON file path for explicit server endpoints
@@ -238,7 +241,7 @@ set -g @opencode-tmux-provider 'plugin'
 
 ## Troubleshooting
 
-- `prefix + O` does nothing: make sure `node` and `npm` are installed and reload tmux
+- `prefix + O` or `prefix + P` does nothing: make sure `node` and `npm` are installed and reload tmux
 - first TPM load feels slow: the plugin may be running `npm ci --omit=dev` to bootstrap dependencies
 - new panes show stale state: restart the `opencode` session so it reloads the plugin
 - waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/opencode-tmux.ts`

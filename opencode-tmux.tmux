@@ -144,14 +144,14 @@ normalize_status_option() {
   esac
 }
 
-normalize_launcher() {
-  local launcher="$1"
-  case "$launcher" in
-    popup|menu|"")
-      printf '%s' "${launcher:-menu}"
+normalize_binding_key() {
+  local key="$1"
+  case "$key" in
+    ""|off|none|disabled)
+      printf '%s' ''
       ;;
     *)
-      printf '%s' 'menu'
+      printf '%s' "$key"
       ;;
   esac
 }
@@ -184,6 +184,27 @@ normalize_toggle() {
       printf '%s' 'off'
       ;;
   esac
+}
+
+unbind_key_if_set() {
+  local key="$1"
+
+  if [ -z "$key" ]; then
+    return
+  fi
+
+  tmux unbind-key "$key" >/dev/null 2>&1 || true
+}
+
+store_bound_key() {
+  local option_name="$1"
+  local key="$2"
+
+  if [ -n "$key" ]; then
+    tmux set-option -gq "$option_name" "$key"
+  else
+    tmux set-option -gu "$option_name"
+  fi
 }
 
 dependencies_installed() {
@@ -246,18 +267,19 @@ install_opencode_plugin() {
 }
 
 main() {
-  local key waiting_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode launcher install_plugin status_text_segment status_inline_segment status_tone_segment
+  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin status_text_segment status_inline_segment status_tone_segment
   local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown
-  local previous_status_segment previous_status_option
-  key="$(get_tmux_option '@opencode-tmux-key' 'O')"
-  waiting_key="$(get_tmux_option '@opencode-tmux-waiting-key' 'W')"
+  local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key
+  menu_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-menu-key' 'O')")"
+  popup_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-popup-key' 'P')")"
+  waiting_menu_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-waiting-menu-key' 'W')")"
+  waiting_popup_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-waiting-popup-key' 'C-w')")"
   provider="$(get_tmux_option '@opencode-tmux-provider' 'auto')"
   server_map="$(get_tmux_option '@opencode-tmux-server-map' '')"
   popup_filter="$(get_tmux_option '@opencode-tmux-popup-filter' 'all')"
   popup_width="$(get_tmux_option '@opencode-tmux-popup-width' '100%')"
   popup_height="$(get_tmux_option '@opencode-tmux-popup-height' '100%')"
   popup_title="$(get_tmux_option '@opencode-tmux-popup-title' 'OpenCode Sessions')"
-  launcher="$(normalize_launcher "$(get_tmux_option '@opencode-tmux-launcher' 'menu')")"
   install_plugin="$(normalize_toggle "$(get_tmux_option '@opencode-tmux-install-opencode-plugin' 'on')")"
   status_enabled="$(get_tmux_option '@opencode-tmux-status' 'on')"
   status_style="$(get_tmux_option '@opencode-tmux-status-style' 'tmux')"
@@ -272,6 +294,10 @@ main() {
   status_color_unknown="$(get_tmux_option '@opencode-tmux-status-color-unknown' 'colour244')"
   previous_status_segment="$(get_tmux_option '@opencode-tmux-status-segment' '')"
   previous_status_option="$(get_tmux_option '@opencode-tmux-status-option' 'status-right')"
+  previous_menu_key="$(get_tmux_option '@opencode-tmux-bound-menu-key' '')"
+  previous_popup_key="$(get_tmux_option '@opencode-tmux-bound-popup-key' '')"
+  previous_waiting_menu_key="$(get_tmux_option '@opencode-tmux-bound-waiting-menu-key' '')"
+  previous_waiting_popup_key="$(get_tmux_option '@opencode-tmux-bound-waiting-popup-key' '')"
   status_option="$(normalize_status_option "$status_position")"
 
   if [ ! -f "$CURRENT_DIR/bin/opencode-tmux" ]; then
@@ -301,12 +327,12 @@ main() {
   popup_script="$CURRENT_DIR/scripts/tmux-popup-switch.sh"
   menu_script="$CURRENT_DIR/scripts/tmux-menu-switch.sh"
 
-  if [ ! -f "$popup_script" ]; then
+  if { [ -n "$popup_key" ] || [ -n "$waiting_popup_key" ]; } && [ ! -f "$popup_script" ]; then
     tmux display-message "opencode-tmux: missing scripts/tmux-popup-switch.sh in plugin directory"
     exit 0
   fi
 
-  if [ ! -f "$menu_script" ]; then
+  if { [ -n "$menu_key" ] || [ -n "$waiting_menu_key" ]; } && [ ! -f "$menu_script" ]; then
     tmux display-message "opencode-tmux: missing scripts/tmux-menu-switch.sh in plugin directory"
     exit 0
   fi
@@ -336,13 +362,31 @@ main() {
     bind_command="$bind_command $popup_filter_arg"
   fi
 
-  if [ "$launcher" = "popup" ]; then
-    tmux bind-key "$key" display-popup -E -w "$popup_width" -h "$popup_height" -T "$popup_title" "$switch_command"
-    tmux bind-key "$waiting_key" display-popup -E -w "$popup_width" -h "$popup_height" -T "$popup_title (Waiting)" "$waiting_switch_command"
-  else
-    tmux bind-key "$key" run-shell "$bind_command"
-    tmux bind-key "$waiting_key" run-shell "$waiting_bind_command"
+  unbind_key_if_set "$previous_menu_key"
+  unbind_key_if_set "$previous_popup_key"
+  unbind_key_if_set "$previous_waiting_menu_key"
+  unbind_key_if_set "$previous_waiting_popup_key"
+
+  if [ -n "$menu_key" ]; then
+    tmux bind-key "$menu_key" run-shell "$bind_command"
   fi
+
+  if [ -n "$popup_key" ]; then
+    tmux bind-key "$popup_key" display-popup -E -w "$popup_width" -h "$popup_height" -T "$popup_title" "$switch_command"
+  fi
+
+  if [ -n "$waiting_menu_key" ]; then
+    tmux bind-key "$waiting_menu_key" run-shell "$waiting_bind_command"
+  fi
+
+  if [ -n "$waiting_popup_key" ]; then
+    tmux bind-key "$waiting_popup_key" display-popup -E -w "$popup_width" -h "$popup_height" -T "$popup_title (Waiting)" "$waiting_switch_command"
+  fi
+
+  store_bound_key '@opencode-tmux-bound-menu-key' "$menu_key"
+  store_bound_key '@opencode-tmux-bound-popup-key' "$popup_key"
+  store_bound_key '@opencode-tmux-bound-waiting-menu-key' "$waiting_menu_key"
+  store_bound_key '@opencode-tmux-bound-waiting-popup-key' "$waiting_popup_key"
 
   if [ -n "$previous_status_segment" ]; then
     remove_status_segment "$previous_status_option" "$previous_status_segment"
