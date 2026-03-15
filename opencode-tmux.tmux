@@ -70,13 +70,17 @@ configure_catppuccin_status_module() {
   local waiting_color="$4"
   local idle_color="$5"
   local unknown_color="$6"
-  local left_separator right_separator middle_separator status_fill connect_separator connect_style theme_crust theme_fg status_bg accent_format
-  local middle_style right_style module
+  local left_separator right_separator middle_separator connect_separator connect_style theme_crust theme_fg module_text_bg accent_format
+  local module
 
   if [ -z "$text_segment" ] || ! catppuccin_loaded; then
     tmux set-option -gu @catppuccin_opencode_icon
     tmux set-option -gu @catppuccin_opencode_color
     tmux set-option -gu @catppuccin_opencode_text
+    tmux set-option -gu @catppuccin_status_opencode_icon_fg
+    tmux set-option -gu @catppuccin_status_opencode_icon_bg
+    tmux set-option -gu @catppuccin_status_opencode_text_fg
+    tmux set-option -gu @catppuccin_status_opencode_text_bg
     tmux set-option -gu @catppuccin_status_opencode
     return
   fi
@@ -89,26 +93,34 @@ configure_catppuccin_status_module() {
   left_separator="$(tmux show-option -gqv @catppuccin_status_left_separator)"
   right_separator="$(tmux show-option -gqv @catppuccin_status_right_separator)"
   middle_separator="$(tmux show-option -gqv @catppuccin_status_middle_separator)"
-  status_fill="$(tmux show-option -gqv @catppuccin_status_fill)"
   connect_separator="$(tmux show-option -gqv @catppuccin_status_connect_separator)"
   theme_crust="$(tmux show-option -gqv @thm_crust)"
   theme_fg="$(tmux show-option -gqv @thm_fg)"
-  status_bg="$(tmux show-option -gqv @_ctp_status_bg)"
+  module_text_bg="$(tmux show-option -gqv @catppuccin_status_module_text_bg)"
   connect_style='#[bg=default]'
+
+  if [ -z "$module_text_bg" ]; then
+    module_text_bg="$(tmux show-option -gqv @catppuccin_status_module_bg_color)"
+  fi
+
+  if [ -z "$module_text_bg" ]; then
+    module_text_bg="$(tmux show-option -gqv @thm_surface_0)"
+  fi
 
   if [ "$connect_separator" = 'yes' ]; then
     connect_style=''
   fi
 
-  if [ "$status_fill" = 'icon' ]; then
-    middle_style="#[fg=#{E:@catppuccin_opencode_color},bg=$status_bg]$middle_separator#[fg=$theme_fg] "
-    right_style="#[fg=$status_bg]$connect_style$right_separator"
-  else
-    middle_style="#[fg=#{E:@catppuccin_opencode_color}]$middle_separator#[fg=$theme_crust]"
-    right_style="#[fg=#{E:@catppuccin_opencode_color}]$connect_style$right_separator"
-  fi
+  tmux set-option -gq @catppuccin_status_opencode_icon_fg "$theme_crust"
+  tmux set-option -gq @catppuccin_status_opencode_icon_bg "$accent_format"
+  tmux set-option -gq @catppuccin_status_opencode_text_fg "$theme_fg"
+  tmux set-option -gq @catppuccin_status_opencode_text_bg "$module_text_bg"
 
-  module="#[fg=#{E:@catppuccin_opencode_color},nobold,nounderscore,noitalics]$connect_style$left_separator#[fg=$theme_crust,bg=#{E:@catppuccin_opencode_color}]${prefix} $middle_style#{E:@catppuccin_opencode_text}$right_style"
+  module="#[fg=#{E:@catppuccin_status_opencode_icon_bg},nobold,nounderscore,noitalics]$connect_style$left_separator"
+  module="$module#[fg=#{E:@catppuccin_status_opencode_icon_fg},bg=#{E:@catppuccin_status_opencode_icon_bg}]${prefix} "
+  module="$module$middle_separator"
+  module="$module#[fg=#{E:@catppuccin_status_opencode_text_fg},bg=#{E:@catppuccin_status_opencode_text_bg}] #{E:@catppuccin_opencode_text}"
+  module="$module#[fg=#{E:@catppuccin_status_opencode_text_bg}]$connect_style$right_separator"
   tmux set-option -gq @catppuccin_status_opencode "$module"
 }
 
@@ -286,7 +298,7 @@ main() {
   status_position="$(get_tmux_option '@opencode-tmux-status-position' 'right')"
   status_mode="$(normalize_status_mode "$(get_tmux_option '@opencode-tmux-status-mode' 'manual')")"
   status_interval="$(get_tmux_option '@opencode-tmux-status-interval' '1')"
-  status_prefix="$(get_tmux_option '@opencode-tmux-status-prefix' 'OC')"
+  status_prefix="$(get_tmux_option '@opencode-tmux-status-prefix' '󰫼')"
   status_color_neutral="$(get_tmux_option '@opencode-tmux-status-color-neutral' 'colour252')"
   status_color_busy="$(get_tmux_option '@opencode-tmux-status-color-busy' 'colour220')"
   status_color_waiting="$(get_tmux_option '@opencode-tmux-status-color-waiting' 'colour196')"
