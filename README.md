@@ -28,8 +28,10 @@ set -g @opencode-tmux-waiting-popup-key 'C-w'
 set -g @opencode-tmux-status 'on'
 set -g @opencode-tmux-status-style 'tmux'
 set -g @opencode-tmux-status-position 'right'
-set -g @opencode-tmux-status-interval '1'
+set -g @opencode-tmux-status-interval '0'
 ```
+
+Those defaults favor the bundled plugin provider and event-driven status redraws so tmux stops polling Node in the background.
 
 To match your tmux theme, you can also override the status colors:
 
@@ -158,10 +160,12 @@ Enable or tune the status line with:
 set -g @opencode-tmux-status 'on'
 set -g @opencode-tmux-status-style 'tmux'
 set -g @opencode-tmux-status-position 'right'
-set -g @opencode-tmux-status-interval '1'
+set -g @opencode-tmux-status-interval '0'
 ```
 
 By default the plugin now uses manual mode so your theme can place the segment itself.
+
+With the bundled plugin provider, `0` makes the status line event-driven: `opencode` session events and tmux navigation hooks trigger redraws, instead of polling on a timer. If you switch to the `sqlite` or `server` provider, set a positive interval if you still want periodic background refreshes.
 
 For Catppuccin, use the native module the plugin exports:
 
@@ -202,7 +206,7 @@ Available tmux options:
 - `@opencode-tmux-waiting-menu-key` waiting-only menu chooser key, default `W`
 - `@opencode-tmux-waiting-popup-key` waiting-only popup chooser key, default `C-w`
 - `@opencode-tmux-install-opencode-plugin` `on` or `off`, default `on`
-- `@opencode-tmux-provider` `auto`, `plugin`, `sqlite`, or `server`
+- `@opencode-tmux-provider` `auto`, `plugin`, `sqlite`, or `server`, default `plugin`
 - `@opencode-tmux-server-map` JSON object or JSON file path for explicit server endpoints
 - `@opencode-tmux-popup-filter` one of `all`, `busy`, `waiting`, `running`, `active`
 - `@opencode-tmux-popup-width` popup width, default `100%`
@@ -212,7 +216,7 @@ Available tmux options:
 - `@opencode-tmux-status-style` `plain` or `tmux`, default `tmux`
 - `@opencode-tmux-status-mode` `append` or `manual`, default `manual`
 - `@opencode-tmux-status-position` `right` or `left`, default `right`
-- `@opencode-tmux-status-interval` tmux `status-interval`, default `1`
+- `@opencode-tmux-status-interval` tmux `status-interval`, default `0`
 - `@opencode-tmux-status-prefix` label shown before the status summary, default `󰫼`
 - `@opencode-tmux-status-color-neutral` tmux color for the prefix and separators, default `colour252`
 - `@opencode-tmux-status-color-idle` tmux color for idle state, default `colour70`
@@ -224,7 +228,7 @@ Available tmux options:
 
 Recommended provider:
 
-- `plugin` for the best waiting/running/idle detection in normal local `opencode` sessions
+- `plugin` for the best waiting/running/idle detection in normal local `opencode` sessions, and the default tmux integration provider
 
 Provider modes:
 
@@ -245,6 +249,7 @@ set -g @opencode-tmux-provider 'plugin'
 - first TPM load feels slow: the plugin may be running `npm ci --omit=dev` to bootstrap dependencies
 - new panes show stale state: restart the `opencode` session so it reloads the plugin
 - waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/opencode-tmux.ts`
+- status looks stale with `sqlite` or `server`: set `@opencode-tmux-status-interval` to a positive value because event-driven refreshes are centered on the bundled plugin provider
 - TPM install changed but tmux still looks old: run `prefix + I` or `tmux source-file ~/.tmux.conf`
 
 ## Local Development Sync

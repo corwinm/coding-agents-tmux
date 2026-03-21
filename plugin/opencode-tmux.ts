@@ -1,8 +1,23 @@
+import { spawnSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { homedir } from "node:os"
 import { join } from "node:path"
 
 const STATE_DIR = process.env.OPENCODE_TMUX_STATE_DIR ?? join(process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"), "opencode-tmux", "plugin-state")
+
+let tmuxRefreshTimer: ReturnType<typeof setTimeout> | null = null
+
+function scheduleTmuxStatusRefresh() {
+  if (!process.env.TMUX || tmuxRefreshTimer) {
+    return
+  }
+
+  tmuxRefreshTimer = setTimeout(() => {
+    tmuxRefreshTimer = null
+    spawnSync("tmux", ["refresh-client", "-S"], { stdio: "ignore" })
+  }, 150)
+}
+
 function getNestedValue(payload: unknown, path: string[]): unknown {
   let current: unknown = payload
 
@@ -243,11 +258,13 @@ export const OpencodeTmuxPlugin = async ({ directory, project, client }) => {
   })
 
   await persist()
+  scheduleTmuxStatusRefresh()
 
   return {
     event: async ({ event }) => {
       applyDerivedStatus(event)
       await persist()
+      scheduleTmuxStatusRefresh()
     },
   }
 }

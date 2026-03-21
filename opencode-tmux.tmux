@@ -219,6 +219,53 @@ store_bound_key() {
   fi
 }
 
+set_status_hook() {
+  local hook_name="$1"
+  local hook_index="$2"
+  local hook_command="$3"
+
+  tmux set-hook -g "${hook_name}[${hook_index}]" "$hook_command" >/dev/null 2>&1 || true
+}
+
+clear_status_hook() {
+  local hook_name="$1"
+  local hook_index="$2"
+
+  tmux set-hook -gu "${hook_name}[${hook_index}]" >/dev/null 2>&1 || true
+}
+
+configure_status_hooks() {
+  local hook_command="$1"
+
+  set_status_hook client-attached 200 "$hook_command"
+  set_status_hook client-active 201 "$hook_command"
+  set_status_hook client-session-changed 202 "$hook_command"
+  set_status_hook session-window-changed 203 "$hook_command"
+  set_status_hook after-select-pane 204 "$hook_command"
+  set_status_hook after-select-window 205 "$hook_command"
+  set_status_hook after-new-window 206 "$hook_command"
+  set_status_hook after-split-window 207 "$hook_command"
+  set_status_hook after-kill-pane 208 "$hook_command"
+  set_status_hook after-kill-window 209 "$hook_command"
+  set_status_hook window-linked 210 "$hook_command"
+  set_status_hook window-unlinked 211 "$hook_command"
+}
+
+clear_status_hooks() {
+  clear_status_hook client-attached 200
+  clear_status_hook client-active 201
+  clear_status_hook client-session-changed 202
+  clear_status_hook session-window-changed 203
+  clear_status_hook after-select-pane 204
+  clear_status_hook after-select-window 205
+  clear_status_hook after-new-window 206
+  clear_status_hook after-split-window 207
+  clear_status_hook after-kill-pane 208
+  clear_status_hook after-kill-window 209
+  clear_status_hook window-linked 210
+  clear_status_hook window-unlinked 211
+}
+
 dependencies_installed() {
   local commander_dir="$CURRENT_DIR/node_modules/commander"
   local commander_manifest="$commander_dir/package.json"
@@ -279,14 +326,14 @@ install_opencode_plugin() {
 }
 
 main() {
-  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin status_text_segment status_inline_segment status_tone_segment
+  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin status_text_segment status_inline_segment status_tone_segment status_refresh_command
   local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown
   local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key
   menu_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-menu-key' 'O')")"
   popup_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-popup-key' 'P')")"
   waiting_menu_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-waiting-menu-key' 'W')")"
   waiting_popup_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-waiting-popup-key' 'C-w')")"
-  provider="$(get_tmux_option '@opencode-tmux-provider' 'auto')"
+  provider="$(get_tmux_option '@opencode-tmux-provider' 'plugin')"
   server_map="$(get_tmux_option '@opencode-tmux-server-map' '')"
   popup_filter="$(get_tmux_option '@opencode-tmux-popup-filter' 'all')"
   popup_width="$(get_tmux_option '@opencode-tmux-popup-width' '100%')"
@@ -297,7 +344,7 @@ main() {
   status_style="$(get_tmux_option '@opencode-tmux-status-style' 'tmux')"
   status_position="$(get_tmux_option '@opencode-tmux-status-position' 'right')"
   status_mode="$(normalize_status_mode "$(get_tmux_option '@opencode-tmux-status-mode' 'manual')")"
-  status_interval="$(get_tmux_option '@opencode-tmux-status-interval' '1')"
+  status_interval="$(get_tmux_option '@opencode-tmux-status-interval' '0')"
   status_prefix="$(get_tmux_option '@opencode-tmux-status-prefix' '󰫼')"
   status_color_neutral="$(get_tmux_option '@opencode-tmux-status-color-neutral' 'colour252')"
   status_color_busy="$(get_tmux_option '@opencode-tmux-status-color-busy' 'colour220')"
@@ -355,6 +402,7 @@ main() {
   status_text_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_SHOW_PREFIX='off' '$CURRENT_DIR/bin/opencode-tmux' status --style 'plain' --provider '$provider'"
   status_inline_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_SHOW_PREFIX='off' OPENCODE_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' OPENCODE_TMUX_STATUS_COLOR_BUSY='$status_color_busy' OPENCODE_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' OPENCODE_TMUX_STATUS_COLOR_IDLE='$status_color_idle' OPENCODE_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/opencode-tmux' status --style 'tmux' --provider '$provider'"
   status_tone_command="cd '$CURRENT_DIR' && '$CURRENT_DIR/bin/opencode-tmux' status --tone --provider '$provider'"
+  status_refresh_command="refresh-client -S"
   bind_command="'$menu_script' --provider '$provider'"
   waiting_bind_command="'$menu_script' --provider '$provider' --waiting"
 
@@ -416,6 +464,8 @@ main() {
     tmux set-option -gq @opencode-tmux-status-inline-format "$status_inline_segment"
     tmux set-option -gq @opencode-tmux-status-tone "$status_tone_segment"
     configure_catppuccin_status_module "$status_text_segment" "$status_prefix" "$status_color_busy" "$status_color_waiting" "$status_color_idle" "$status_color_unknown"
+    configure_status_hooks "$status_refresh_command"
+    tmux refresh-client -S >/dev/null 2>&1 || true
 
     if [ "$status_mode" = "append" ]; then
       append_status_segment "$status_option" "$current_status_segment"
@@ -453,6 +503,7 @@ main() {
       tmux set-option -gu @opencode-tmux-status-option
     fi
   else
+    clear_status_hooks
     tmux set-option -gu @opencode-tmux-status-format
     tmux set-option -gu @opencode-tmux-status-text
     tmux set-option -gu @opencode-tmux-status-inline-format

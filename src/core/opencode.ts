@@ -78,6 +78,12 @@ interface PluginStateFile {
   version?: number;
 }
 
+interface PluginStateIndex {
+  descendantMatches: Map<string, PluginStateFile | null>;
+  exactMatches: Map<string, PluginStateFile>;
+  states: PluginStateFile[];
+}
+
 function getOpencodeDbPath(): string {
   const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
   return join(dataHome, "opencode", "opencode.db");
@@ -255,34 +261,57 @@ function readPluginStates(): PluginStateFile[] {
     .filter((state): state is PluginStateFile => Boolean(state?.directory));
 }
 
-function getExactPluginState(directory: string): PluginStateFile | null {
-  const states = readPluginStates().filter((state) => state.directory === directory);
+function buildPluginStateIndex(): PluginStateIndex {
+  const states = readPluginStates();
+  const exactMatches = new Map<string, PluginStateFile>();
 
-  if (states.length === 0) {
-    return null;
+  for (const state of states) {
+    const directory = state.directory;
+
+    if (!directory) {
+      continue;
+    }
+
+    const existing = exactMatches.get(directory);
+    if (!existing || (state.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
+      exactMatches.set(directory, state);
+    }
   }
 
-  return states.sort((left, right) => (right.updatedAt ?? 0) - (left.updatedAt ?? 0))[0] ?? null;
+  return {
+    descendantMatches: new Map<string, PluginStateFile | null>(),
+    exactMatches,
+    states,
+  };
 }
 
-function getDescendantPluginState(directory: string): PluginStateFile | null {
+function getExactPluginState(index: PluginStateIndex, directory: string): PluginStateFile | null {
+  const state = index.exactMatches.get(directory);
+
+  return state ?? null;
+}
+
+function getDescendantPluginState(index: PluginStateIndex, directory: string): PluginStateFile | null {
+  if (index.descendantMatches.has(directory)) {
+    return index.descendantMatches.get(directory) ?? null;
+  }
+
   const normalizedDirectory = directory.endsWith("/") ? directory : `${directory}/`;
-  const states = readPluginStates().filter((state) => state.directory?.startsWith(normalizedDirectory));
+  const states = index.states.filter((state) => state.directory?.startsWith(normalizedDirectory));
+
+  let match: PluginStateFile | null = null;
 
   if (states.length === 1) {
-    return states[0] ?? null;
+    match = states[0] ?? null;
+  } else if (states.length > 0) {
+    const busyStates = states.filter((state) => state.activity === "busy");
+    if (busyStates.length === 1) {
+      match = busyStates[0] ?? null;
+    }
   }
 
-  if (states.length === 0) {
-    return null;
-  }
-
-  const busyStates = states.filter((state) => state.activity === "busy");
-  if (busyStates.length === 1) {
-    return busyStates[0] ?? null;
-  }
-
-  return null;
+  index.descendantMatches.set(directory, match);
+  return match;
 }
 
 function classifyPluginState(state: PluginStateFile | null, source: RuntimeSource, heuristic: boolean): RuntimeInfo {
@@ -314,9 +343,9 @@ function classifyPluginState(state: PluginStateFile | null, source: RuntimeSourc
   });
 }
 
-function attachRuntimeWithPlugin(panes: DiscoveredPane[]): PaneRuntimeSummary[] {
+function attachRuntimeWithPlugin(panes: DiscoveredPane[], index = buildPluginStateIndex()): PaneRuntimeSummary[] {
   return panes.map((entry) => {
-    const exactState = getExactPluginState(entry.pane.currentPath);
+    const exactState = getExactPluginState(index, entry.pane.currentPath);
 
     if (exactState) {
       return {
@@ -325,7 +354,7 @@ function attachRuntimeWithPlugin(panes: DiscoveredPane[]): PaneRuntimeSummary[] 
       };
     }
 
-    const descendantState = getDescendantPluginState(entry.pane.currentPath);
+    const descendantState = getDescendantPluginState(index, entry.pane.currentPath);
 
     if (descendantState) {
       return {
@@ -868,18 +897,17 @@ export async function attachRuntimeToPanes(
   }
 
   const pluginResults = attachRuntimeWithPlugin(panes);
-  const hasPluginMatches = pluginResults.some((entry) => entry.runtime.match.provider === "plugin");
+  const unmatchedPanes = panes.filter((_, index) => pluginResults[index]?.runtime.match.provider !== "plugin");
 
-  if (hasPluginMatches) {
-    const fallbackResults = await attachRuntimeWithServerMap(panes, options, true);
+  if (unmatchedPanes.length === 0) {
+    return pluginResults;
+  }
 
-    return pluginResults.map((entry, index) => {
-      if (entry.runtime.match.provider === "plugin") {
-        return entry;
-      }
+  if (unmatchedPanes.length !== panes.length) {
+    const fallbackResults = await attachRuntimeWithServerMap(unmatchedPanes, options, true);
+    const fallbackByTarget = new Map(fallbackResults.map((entry) => [entry.pane.target, entry]));
 
-      return fallbackResults[index] ?? entry;
-    });
+    return pluginResults.map((entry) => fallbackByTarget.get(entry.pane.target) ?? entry);
   }
 
   return attachRuntimeWithServerMap(panes, options, true);
