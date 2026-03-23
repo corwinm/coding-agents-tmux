@@ -71,8 +71,10 @@ interface PluginStateFile {
   activity?: RuntimeInfo["activity"];
   detail?: string;
   directory?: string;
+  paneId?: string | null;
   sessionId?: string;
   status?: RuntimeStatus;
+  target?: string | null;
   title?: string;
   updatedAt?: number;
   version?: number;
@@ -80,8 +82,22 @@ interface PluginStateFile {
 
 interface PluginStateIndex {
   descendantMatches: Map<string, PluginStateFile | null>;
-  exactMatches: Map<string, PluginStateFile>;
+  exactPaneIdMatches: Map<string, PluginStateFile>;
+  exactTargetMatches: Map<string, PluginStateFile>;
+  statesByDirectory: Map<string, PluginStateFile[]>;
   states: PluginStateFile[];
+}
+
+function getStateUpdatedAt(state: PluginStateFile): number {
+  return state.updatedAt ?? 0;
+}
+
+function pickNewerState(current: PluginStateFile | undefined, candidate: PluginStateFile): PluginStateFile {
+  if (!current || getStateUpdatedAt(candidate) > getStateUpdatedAt(current)) {
+    return candidate;
+  }
+
+  return current;
 }
 
 function getOpencodeDbPath(): string {
@@ -263,7 +279,9 @@ function readPluginStates(): PluginStateFile[] {
 
 function buildPluginStateIndex(): PluginStateIndex {
   const states = readPluginStates();
-  const exactMatches = new Map<string, PluginStateFile>();
+  const exactPaneIdMatches = new Map<string, PluginStateFile>();
+  const exactTargetMatches = new Map<string, PluginStateFile>();
+  const statesByDirectory = new Map<string, PluginStateFile[]>();
 
   for (const state of states) {
     const directory = state.directory;
@@ -272,23 +290,68 @@ function buildPluginStateIndex(): PluginStateIndex {
       continue;
     }
 
-    const existing = exactMatches.get(directory);
-    if (!existing || (state.updatedAt ?? 0) > (existing.updatedAt ?? 0)) {
-      exactMatches.set(directory, state);
+    const directoryStates = statesByDirectory.get(directory) ?? [];
+    directoryStates.push(state);
+    statesByDirectory.set(directory, directoryStates);
+
+    if (state.paneId) {
+      exactPaneIdMatches.set(state.paneId, pickNewerState(exactPaneIdMatches.get(state.paneId), state));
+    }
+
+    if (state.target) {
+      exactTargetMatches.set(state.target, pickNewerState(exactTargetMatches.get(state.target), state));
     }
   }
 
   return {
     descendantMatches: new Map<string, PluginStateFile | null>(),
-    exactMatches,
+    exactPaneIdMatches,
+    exactTargetMatches,
+    statesByDirectory,
     states,
   };
 }
 
-function getExactPluginState(index: PluginStateIndex, directory: string): PluginStateFile | null {
-  const state = index.exactMatches.get(directory);
+function getLatestPluginState(states: PluginStateFile[]): PluginStateFile | null {
+  return states.reduce<PluginStateFile | null>((latest, state) => {
+    if (!latest || getStateUpdatedAt(state) > getStateUpdatedAt(latest)) {
+      return state;
+    }
 
-  return state ?? null;
+    return latest;
+  }, null);
+}
+
+function getExactPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
+  const targetState = index.exactTargetMatches.get(pane.target);
+
+  if (targetState) {
+    return targetState;
+  }
+
+  const paneIdState = index.exactPaneIdMatches.get(pane.paneId);
+
+  if (paneIdState) {
+    return paneIdState;
+  }
+
+  const states = index.statesByDirectory.get(pane.currentPath) ?? [];
+
+  if (states.length === 0) {
+    return null;
+  }
+
+  const legacyStates = states.filter((state) => !state.paneId && !state.target);
+
+  if (legacyStates.length > 0) {
+    return getLatestPluginState(legacyStates);
+  }
+
+  if (states.length === 1) {
+    return states[0] ?? null;
+  }
+
+  return null;
 }
 
 function getDescendantPluginState(index: PluginStateIndex, directory: string): PluginStateFile | null {
@@ -345,7 +408,7 @@ function classifyPluginState(state: PluginStateFile | null, source: RuntimeSourc
 
 function attachRuntimeWithPlugin(panes: DiscoveredPane[], index = buildPluginStateIndex()): PaneRuntimeSummary[] {
   return panes.map((entry) => {
-    const exactState = getExactPluginState(index, entry.pane.currentPath);
+    const exactState = getExactPluginState(index, entry.pane);
 
     if (exactState) {
       return {

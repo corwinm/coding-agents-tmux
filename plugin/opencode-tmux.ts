@@ -107,8 +107,43 @@ function getNumberCandidate(payload: unknown, paths: string[][]): number | null 
   return null
 }
 
-function toFileName(directory: string) {
-  return `${Buffer.from(directory).toString("hex")}.json`
+function normalizeEnvValue(value: string | undefined) {
+  if (!value) {
+    return null
+  }
+
+  const trimmed = value.trim()
+  return trimmed ? trimmed : null
+}
+
+function runTmuxCommand(args: string[]) {
+  return spawnSync("tmux", args, {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+  })
+}
+
+function resolveTmuxPaneTarget(paneId: string | null) {
+  if (!paneId) {
+    return null
+  }
+
+  const result = runTmuxCommand(["display-message", "-p", "-t", paneId, "#{session_name}:#{window_index}.#{pane_index}"])
+
+  if (result.status !== 0) {
+    return null
+  }
+
+  const target = result.stdout.trim()
+  return target ? target : null
+}
+
+function toFileName(input: { directory: string; paneId: string | null }) {
+  if (input.paneId) {
+    return `pane-${Buffer.from(input.paneId).toString("hex")}.json`
+  }
+
+  return `cwd-${Buffer.from(input.directory).toString("hex")}.json`
 }
 
 function isWaitingStatus(status: string | null) {
@@ -147,9 +182,33 @@ function getWaitingStatus(input: { status: string | null; tool: string | null; o
   return null
 }
 
+function shouldPreserveWaitingStatus(input: {
+  currentStatus: string
+  eventType: string
+  status: string | null
+  busy: boolean | null
+}) {
+  if (!isWaitingStatus(input.currentStatus)) {
+    return false
+  }
+
+  if (input.eventType === "permission.replied" || input.eventType === "question.replied") {
+    return false
+  }
+
+  if (input.status === "idle" || input.busy === false) {
+    return false
+  }
+
+  return input.status === "running" || input.status === "busy" || input.busy === true || input.eventType === "session.status"
+}
+
 export const OpencodeTmuxPlugin = async ({ directory, project, client }) => {
+  const paneId = normalizeEnvValue(process.env.TMUX_PANE)
   const state = {
-    version: 1,
+    version: 2,
+    paneId,
+    target: resolveTmuxPaneTarget(paneId),
     sessionId: null as string | null,
     directory,
     title: project?.name ?? directory.split("/").filter(Boolean).pop() ?? "OpenCode session",
@@ -161,8 +220,14 @@ export const OpencodeTmuxPlugin = async ({ directory, project, client }) => {
   }
 
   async function persist() {
+    const target = resolveTmuxPaneTarget(state.paneId)
+
+    if (target) {
+      state.target = target
+    }
+
     mkdirSync(STATE_DIR, { recursive: true })
-    writeFileSync(join(STATE_DIR, toFileName(state.directory)), JSON.stringify(state, null, 2))
+    writeFileSync(join(STATE_DIR, toFileName({ directory: state.directory, paneId: state.paneId })), JSON.stringify(state, null, 2))
   }
 
   function applyDerivedStatus(event: { type: string; [key: string]: unknown }) {
@@ -235,9 +300,9 @@ export const OpencodeTmuxPlugin = async ({ directory, project, client }) => {
     }
 
     if (status === "running" || status === "busy" || busy === true || event.type === "session.status") {
-      if (event.type === "session.status" && state.status && isWaitingStatus(state.status) && status !== "idle" && busy !== false) {
+      if (shouldPreserveWaitingStatus({ currentStatus: state.status, eventType: event.type, status, busy })) {
         state.activity = "busy"
-        state.detail = "session.status kept prior waiting state"
+        state.detail = `${event.type} kept prior waiting state`
         return
       }
 
@@ -253,7 +318,7 @@ export const OpencodeTmuxPlugin = async ({ directory, project, client }) => {
       service: "opencode-tmux-plugin",
       level: "info",
       message: "plugin initialized",
-      extra: { directory, stateDir: STATE_DIR },
+      extra: { directory, paneId: state.paneId, stateDir: STATE_DIR, target: state.target },
     },
   })
 
