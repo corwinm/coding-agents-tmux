@@ -345,7 +345,7 @@ main() {
   status_position="$(get_tmux_option '@opencode-tmux-status-position' 'right')"
   status_mode="$(normalize_status_mode "$(get_tmux_option '@opencode-tmux-status-mode' 'manual')")"
   status_interval="$(get_tmux_option '@opencode-tmux-status-interval' '0')"
-  status_prefix="$(get_tmux_option '@opencode-tmux-status-prefix' '󰫼')"
+  status_prefix="$(get_tmux_option '@opencode-tmux-status-prefix' '󰚩')"
   status_color_neutral="$(get_tmux_option '@opencode-tmux-status-color-neutral' 'colour252')"
   status_color_busy="$(get_tmux_option '@opencode-tmux-status-color-busy' 'colour220')"
   status_color_waiting="$(get_tmux_option '@opencode-tmux-status-color-waiting' 'colour196')"

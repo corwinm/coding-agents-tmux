@@ -127,22 +127,22 @@ When enabled, the status line shows two views at once:
 Example output:
 
 ```text
-󰫼 |  idle |   
-󰫼 |  busy | 
-󰫼 |  new | none
+󰚩 |  idle |   
+󰚩 |  busy | 
+󰚩 |  new | none
 ```
 
 You can also replace the default icon with your own label or a different Nerd Font icon:
 
 ```tmux
-set -g @opencode-tmux-status-prefix '󰫼'
+set -g @opencode-tmux-status-prefix '󰚩'
 ```
 
 This means:
 
-- `󰫼 |  idle |   ` means the focused pane is idle and the background panes are waiting, busy, and idle in target order
-- `󰫼 |  busy | ` means the focused pane is busy and more than eight background panes are shown in compact symbol mode
-- `󰫼 |  new | none` means the focused pane is newly started and there are no other detected `opencode` panes
+- `󰚩 |  idle |   ` means the focused pane is idle and the background panes are waiting, busy, and idle in target order
+- `󰚩 |  busy | ` means the focused pane is busy and more than eight background panes are shown in compact symbol mode
+- `󰚩 |  new | none` means the focused pane is newly started and there are no other detected `opencode` panes
 
 If your active pane is not an `opencode` pane, the status line uses the strongest detected `opencode` pane in the current tmux window. `opencode` panes in other windows are counted as background work.
 
@@ -192,7 +192,7 @@ set -ag status-right " #{@opencode-tmux-status-inline-format}"
 If you want to fully control the wrapper yourself, use the plain text export instead:
 
 ```tmux
-set -ag status-right " #[fg=colour81]󰫼 #[default]#{@opencode-tmux-status-text}"
+set -ag status-right " #[fg=colour81]󰚩 #[default]#{@opencode-tmux-status-text}"
 ```
 
 `manual` mode is the default. `#{E:@catppuccin_status_opencode}` gives Catppuccin users a native-looking module, `#{@opencode-tmux-status-inline-format}` gives other themes a tone-aware inline segment, and `#{@opencode-tmux-status-text}` gives a plain live summary text export for fully custom wrappers. `append` mode restores the old behavior and appends automatically.
@@ -219,7 +219,7 @@ Available tmux options:
 - `@opencode-tmux-status-mode` `append` or `manual`, default `manual`
 - `@opencode-tmux-status-position` `right` or `left`, default `right`
 - `@opencode-tmux-status-interval` tmux `status-interval`, default `0`
-- `@opencode-tmux-status-prefix` label shown before the status summary, default `󰫼`
+- `@opencode-tmux-status-prefix` label shown before the status summary, default `󰚩`
 - `@opencode-tmux-status-color-neutral` tmux color for the prefix and separators, default `colour252`
 - `@opencode-tmux-status-color-idle` tmux color for idle state, default `colour70`
 - `@opencode-tmux-status-color-busy` tmux color for busy state, default `colour220`

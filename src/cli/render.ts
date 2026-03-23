@@ -12,7 +12,7 @@ const statusToneColors: Record<StatusTone, string> = {
   unknown: process.env.OPENCODE_TMUX_STATUS_COLOR_UNKNOWN ?? "colour244",
 };
 
-const statusPrefix = process.env.OPENCODE_TMUX_STATUS_PREFIX ?? "OC";
+const statusPrefix = process.env.OPENCODE_TMUX_STATUS_PREFIX ?? "󰚩";
 const statusShowPrefix = !["0", "false", "no", "off"].includes((process.env.OPENCODE_TMUX_STATUS_SHOW_PREFIX ?? "on").toLowerCase());
 
 const columns = ["TARGET", "ACTIVE", "ACT", "STATUS", "SRC", "CONF", "SESSION", "TITLE", "PATH", "SIGNALS"] as const;
