@@ -217,12 +217,16 @@ export function renderSwitchChoices(panes: PaneRuntimeSummary[]): string {
   return lines.join("\n");
 }
 
-function formatStatusToken(label: string, tone: StatusTone, style: StatusStyle): string {
+function formatStatusToken(label: string, tone: StatusTone, style: StatusStyle, options: { bold?: boolean } = {}): string {
   if (style === "plain") {
     return label;
   }
 
   const color = statusToneColors[tone];
+
+  if (options.bold) {
+    return `#[bold,fg=${color}]${label}#[nobold]#[default]`;
+  }
 
   return `#[fg=${color}]${label}#[default]`;
 }
@@ -251,8 +255,52 @@ function getCurrentLabel(entry: PaneRuntimeSummary): string {
   return entry.runtime.activity;
 }
 
+function getCurrentSymbol(entry: PaneRuntimeSummary): string {
+  return getBackgroundEntrySymbol(entry);
+}
+
 function isWaitingEntry(entry: PaneRuntimeSummary): boolean {
   return entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input";
+}
+
+function getBackgroundEntryTone(entry: PaneRuntimeSummary): StatusTone {
+  if (isWaitingEntry(entry)) {
+    return "waiting";
+  }
+
+  if (entry.runtime.status === "running") {
+    return "busy";
+  }
+
+  if (entry.runtime.status === "idle") {
+    return "idle";
+  }
+
+  if (entry.runtime.status === "new") {
+    return entry.runtime.activity === "idle" ? "idle" : "neutral";
+  }
+
+  return entry.runtime.activity === "busy" ? "busy" : entry.runtime.activity;
+}
+
+function getBackgroundEntrySymbol(entry: PaneRuntimeSummary): string {
+  if (isWaitingEntry(entry)) {
+    return "";
+  }
+
+  if (entry.runtime.status === "running") {
+    return "";
+  }
+
+  if (entry.runtime.status === "idle") {
+    return "";
+  }
+
+  if (entry.runtime.status === "new") {
+    return "";
+  }
+
+  return "";
 }
 
 export function renderStatusTone(current: PaneRuntimeSummary | null, panes: PaneRuntimeSummary[]): StatusTone {
@@ -282,29 +330,13 @@ function renderBackgroundSummary(panes: PaneRuntimeSummary[], style: StatusStyle
     return [formatStatusToken("none", "unknown", style)];
   }
 
-  const total = panes.length;
-  const busy = panes.filter((entry) => entry.runtime.activity === "busy").length;
-  const waiting = panes.filter((entry) => entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input").length;
-  const idle = panes.filter((entry) => entry.runtime.activity === "idle").length;
-  const unknown = total - busy - idle;
+  const separator = panes.length > 8 ? "" : " ";
+  const orderedPanes = [...panes].sort((left, right) => left.pane.target.localeCompare(right.pane.target));
+  const summary = orderedPanes
+    .map((entry) => formatStatusToken(getBackgroundEntrySymbol(entry), getBackgroundEntryTone(entry), style, { bold: true }))
+    .join(separator);
 
-  if (waiting > 0) {
-    return [formatStatusToken(`${waiting}/${total} waiting`, "waiting", style)];
-  }
-
-  if (idle > 0) {
-    return [formatStatusToken(`${idle}/${total} idle`, "idle", style)];
-  }
-
-  if (busy > 0) {
-    return [formatStatusToken(`${busy}/${total} busy`, "busy", style)];
-  }
-
-  if (unknown > 0) {
-    return [formatStatusToken(`${unknown}/${total} unknown`, "unknown", style)];
-  }
-
-  return [formatStatusToken("none", "unknown", style)];
+  return [summary];
 }
 
 function renderCurrentSummary(current: PaneRuntimeSummary | null, style: StatusStyle): string[] {
@@ -313,7 +345,7 @@ function renderCurrentSummary(current: PaneRuntimeSummary | null, style: StatusS
   }
 
   const activityTone = getActivityTone(current);
-  const label = getCurrentLabel(current);
+  const label = `${getCurrentSymbol(current)} ${getCurrentLabel(current)}`;
 
   return [formatStatusToken(label, activityTone, style)];
 }

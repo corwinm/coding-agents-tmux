@@ -127,9 +127,9 @@ When enabled, the status line shows two views at once:
 Example output:
 
 ```text
-󰫼 | idle | 1/2 idle
-󰫼 | busy | 1/2 waiting
-󰫼 | new | none
+󰫼 |  idle |   
+󰫼 |  busy | 
+󰫼 |  new | none
 ```
 
 You can also replace the default icon with your own label or a different Nerd Font icon:
@@ -140,19 +140,21 @@ set -g @opencode-tmux-status-prefix '󰫼'
 
 This means:
 
-- `󰫼 | idle | 1/2 idle` means the focused pane is idle and one of two background panes is idle
-- `󰫼 | busy | 1/2 waiting` means the focused pane is busy and one of two background panes is waiting for input
-- `󰫼 | new | none` means the focused pane is newly started and there are no other detected `opencode` panes
+- `󰫼 |  idle |   ` means the focused pane is idle and the background panes are waiting, busy, and idle in target order
+- `󰫼 |  busy | ` means the focused pane is busy and more than eight background panes are shown in compact symbol mode
+- `󰫼 |  new | none` means the focused pane is newly started and there are no other detected `opencode` panes
 
 If your active pane is not an `opencode` pane, the status line uses the strongest detected `opencode` pane in the current tmux window. `opencode` panes in other windows are counted as background work.
 
-Background summary priority is:
+Background pane symbols are shown in a stable target order:
 
-- `waiting` first
-- then `idle`
-- then `busy`
+- `` waiting
+- `` busy
+- `` idle
+- `` new
+- `` unknown
 
-The background summary shows `matching/total`, so if any background pane is waiting on you, the status line surfaces that instead of less actionable busy work.
+By default the status line adds spaces between background pane symbols for readability. If there are more than eight background panes, it automatically switches to a compact no-space form.
 
 Enable or tune the status line with:
 
