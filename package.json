@@ -14,6 +14,7 @@
     "dev": "./bin/opencode-tmux",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
+    "test": "node --test",
     "check": "./bin/opencode-tmux --help",
     "typecheck": "tsc --project tsconfig.json",
     "sync-tmux": "./scripts/sync-tmux-plugin.sh",

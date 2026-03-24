@@ -14,5 +14,5 @@
     "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": true
   },
-  "include": ["src/**/*.ts", "plugin/**/*.ts"]
+  "include": ["src/**/*.ts", "plugin/**/*.ts", "test/**/*.ts"]
 }
