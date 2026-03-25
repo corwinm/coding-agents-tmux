@@ -488,3 +488,165 @@ exit 1
     restoreEnv();
   }
 });
+
+test("CLI list supports compact and json output with runtime filters", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\n'
+  printf 'work\t2\t0\t%%3\tShell\tbash\t/tmp/other\t0\t/dev/ttys003\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const pluginStateDir = createPluginStateDir([
+    {
+      target: "work:1.0",
+      directory: "/tmp/project-a",
+      title: "Idle Session",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+    {
+      target: "work:1.1",
+      directory: "/tmp/project-b",
+      title: "Waiting Session",
+      status: "waiting-input",
+      activity: "busy",
+      updatedAt: 200,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+  });
+
+  try {
+    const compactResult = await runCommand([
+      BIN_PATH,
+      "list",
+      "--compact",
+      "--waiting",
+      "--provider",
+      "plugin",
+    ]);
+    const jsonResult = await runCommand([
+      BIN_PATH,
+      "list",
+      "--json",
+      "--busy",
+      "--provider",
+      "plugin",
+    ]);
+
+    assert.equal(compactResult.exitCode, 0);
+    assert.equal(
+      compactResult.stdoutText.trim(),
+      "work:1.1\tbusy\twaiting-input\tplugin-exact\t0\tWaiting Session\tOpenCode\t/tmp/project-b",
+    );
+    assert.equal(jsonResult.exitCode, 0);
+    assert.deepEqual(
+      JSON.parse(jsonResult.stdoutText).map(
+        (entry: { pane: { target: string } }) => entry.pane.target,
+      ),
+      ["work:1.1"],
+    );
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI status supports summary json and current-pane rendering", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t0\t/dev/ttys001\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t1\t/dev/ttys002\n'
+  printf 'work\t2\t0\t%%3\tOpenCode\topencode\t/tmp/project-c\t0\t/dev/ttys003\n'
+  exit 0
+fi
+if [ "$1" = "display-message" ]; then
+  printf 'work:1.1\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const pluginStateDir = createPluginStateDir([
+    {
+      target: "work:1.0",
+      directory: "/tmp/project-a",
+      title: "Idle Session",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+    {
+      target: "work:1.1",
+      directory: "/tmp/project-b",
+      title: "Waiting Session",
+      status: "waiting-question",
+      activity: "busy",
+      updatedAt: 200,
+    },
+    {
+      target: "work:2.0",
+      directory: "/tmp/project-c",
+      title: "Running Session",
+      status: "running",
+      activity: "busy",
+      updatedAt: 300,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    TMUX: "1",
+  });
+
+  try {
+    const summaryJson = await runCommand([
+      BIN_PATH,
+      "status",
+      "--summary",
+      "--json",
+      "--provider",
+      "plugin",
+    ]);
+    const currentOutput = await runCommand([BIN_PATH, "status", "--provider", "plugin"]);
+
+    assert.equal(summaryJson.exitCode, 0);
+    assert.deepEqual(JSON.parse(summaryJson.stdoutText), {
+      mode: "summary",
+      total: 3,
+      busy: 2,
+      waiting: 1,
+    });
+    assert.equal(currentOutput.exitCode, 0);
+    assert.equal(currentOutput.stdoutText.trim(), "󰚩 |  waiting | ");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI popup --print-command prints the inner popup-ui command without tmux", async () => {
+  const result = await runCommand([
+    BIN_PATH,
+    "popup",
+    "--print-command",
+    "--provider",
+    "server",
+    "--server-map",
+    "/tmp/server-map.json",
+    "--busy",
+  ]);
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdoutText, /popup-ui/);
+  assert.match(result.stdoutText, /--provider/);
+  assert.match(result.stdoutText, /server/);
+  assert.match(result.stdoutText, /--server-map/);
+  assert.match(result.stdoutText, /\/tmp\/server-map\.json/);
+  assert.match(result.stdoutText, /--busy/);
+});

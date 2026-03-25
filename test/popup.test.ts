@@ -337,3 +337,132 @@ test("promptForPopupSelection refreshes panes and falls back to the next valid s
     true,
   );
 });
+
+test("promptForPopupSelection handles page and end navigation keys", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  const panes = Array.from({ length: 12 }, (_, index) =>
+    createSummary(index % 2 === 0 ? "idle" : "running", {
+      pane: createPane({ target: `work:1.${index}`, paneIndex: index }),
+    }),
+  );
+
+  const selectionPromise = promptForPopupSelection({
+    loadPanes: async () => panes,
+    loadPreview: async (target) => [`preview:${target}`],
+    inputStream: input,
+    outputStream: output,
+  });
+
+  await nextTick();
+  input.send("\u001b[6~");
+  input.send("\u001b[F");
+  input.send("\r");
+
+  const selected = await selectionPromise;
+
+  assert.equal(selected?.pane.target, "work:1.11");
+  assert.equal(
+    output.writes.some((chunk) => chunk.includes("work:1.11")),
+    true,
+  );
+});
+
+test("promptForPopupSelection handles backspace, clear, delete-word, and no-match enter states", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  const panes = [createSummary("idle", { pane: createPane({ target: "work:1.0" }) })];
+
+  const selectionPromise = promptForPopupSelection({
+    loadPanes: async () => panes,
+    loadPreview: async (target) => [`preview:${target}`],
+    inputStream: input,
+    outputStream: output,
+  });
+
+  await nextTick();
+  input.send("a");
+  input.send("b");
+  input.send("\u007f");
+  input.send("c");
+  input.send("\u0017");
+  input.send("z");
+  input.send("\r");
+  input.send("\u0015");
+  input.send("\r");
+
+  const selected = await selectionPromise;
+
+  assert.equal(selected?.pane.target, "work:1.0");
+  assert.equal(
+    output.writes.some((chunk) => chunk.includes("No filtered match to switch to.")),
+    true,
+  );
+});
+
+test("promptForPopupSelection handles home, page-up, and arrow navigation", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  const panes = Array.from({ length: 10 }, (_, index) =>
+    createSummary(index % 2 === 0 ? "idle" : "running", {
+      pane: createPane({ target: `work:2.${index}`, windowIndex: 2, paneIndex: index }),
+    }),
+  );
+
+  const selectionPromise = promptForPopupSelection({
+    loadPanes: async () => panes,
+    loadPreview: async (target) => [`preview:${target}`],
+    inputStream: input,
+    outputStream: output,
+  });
+
+  await nextTick();
+  input.send("\u001b[B");
+  input.send("\u001b[B");
+  input.send("\u001b[A");
+  input.send("\u001b[5~");
+  input.send("\u001b[H");
+  input.send("\r");
+
+  const selected = await selectionPromise;
+
+  assert.equal(selected?.pane.target, "work:2.0");
+  assert.equal(
+    output.writes.some((chunk) => chunk.includes("work:2.0")),
+    true,
+  );
+});
+
+test("promptForPopupSelection keeps running after quick-select cancel paths", async () => {
+  const input = new FakeInput();
+  const output = new FakeOutput();
+  const panes = [
+    createSummary("idle", { pane: createPane({ target: "work:3.0", windowIndex: 3 }) }),
+    createSummary("running", {
+      pane: createPane({ target: "work:3.1", windowIndex: 3, paneIndex: 1 }),
+    }),
+  ];
+
+  const selectionPromise = promptForPopupSelection({
+    loadPanes: async () => panes,
+    loadPreview: async (target) => [`preview:${target}`],
+    inputStream: input,
+    outputStream: output,
+  });
+
+  await nextTick();
+  input.send("\u0007");
+  input.send("\u001b");
+  input.send("\u0007");
+  input.send("x");
+  input.send("\u0015");
+  input.send("\r");
+
+  const selected = await selectionPromise;
+
+  assert.equal(selected?.pane.target, "work:3.0");
+  assert.equal(
+    output.writes.some((chunk) => chunk.includes("Quick select cancelled")),
+    true,
+  );
+});

@@ -281,6 +281,22 @@ test("renderCompactPaneList prints tab-separated rows", () => {
   assert.equal(renderCompactPaneList([]), "");
 });
 
+test("renderCompactPaneList falls back to unmatched and untitled labels", () => {
+  const pane = createSummary("unknown", {
+    pane: createPane({ target: "work:1.1", paneIndex: 1, paneTitle: "" }),
+    runtime: createRuntime("unknown", {
+      source: "unmapped",
+      match: { strategy: "unmapped", provider: "none", heuristic: false },
+      session: null,
+    }),
+  });
+
+  assert.equal(
+    renderCompactPaneList([pane]),
+    "work:1.1\tunknown\tunknown\tunmapped\t0\t(unmatched)\t(untitled)\t/Users/corwin/Developer/opencode-tmux",
+  );
+});
+
 test("renderInspectResult includes pane, detection, and session details", () => {
   const withSession = renderInspectResult({
     target: "work:1.0",
@@ -327,6 +343,40 @@ test("renderStatusSummary supports tmux formatting and compact background mode",
   assert.match(tmuxOutput, /#\[fg=colour220\] busy/);
   assert.doesNotMatch(compactOutput, / | /);
   assert.match(compactOutput, /\|/);
+});
+
+test("renderSwitchChoices shows empty state and status summary honors custom tmux colors", async () => {
+  assert.equal(renderSwitchChoices([]), "No likely opencode tmux panes found.");
+
+  const restoreEnv = setEnv({
+    OPENCODE_TMUX_STATUS_PREFIX: "OC",
+    OPENCODE_TMUX_STATUS_COLOR_NEUTRAL: "colour33",
+    OPENCODE_TMUX_STATUS_COLOR_BUSY: "colour220",
+    OPENCODE_TMUX_STATUS_COLOR_UNKNOWN: "colour244",
+  });
+
+  try {
+    const moduleUrl = new URL(`../src/cli/render.ts?custom-colors=${Date.now()}`, import.meta.url);
+    const renderModule = await import(moduleUrl.href);
+    const current = createSummary("new", {
+      runtime: createRuntime("new", { activity: "busy" }),
+    });
+    const unknown = createSummary("unknown", {
+      pane: createPane({ target: "work:1.1", paneIndex: 1 }),
+      runtime: createRuntime("unknown", {
+        source: "unmapped",
+        match: { strategy: "unmapped", provider: "none", heuristic: false },
+      }),
+    });
+
+    const output = renderModule.renderStatusSummary(current, [current, unknown], { style: "tmux" });
+
+    assert.match(output, /#\[fg=colour33\]OC#\[default\]/);
+    assert.match(output, /#\[fg=colour220\] new#\[default\]/);
+    assert.match(output, /#\[bold,fg=colour244\]#\[nobold\]#\[default\]/);
+  } finally {
+    restoreEnv();
+  }
 });
 
 test("renderStatusSummary honors the prefix toggle when reloaded with env overrides", async () => {
