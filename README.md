@@ -1,13 +1,15 @@
 # opencode-tmux
 
-`tmux` integration for `opencode` sessions.
+`tmux` integration for terminal coding agent sessions.
 
 Install it with TPM to:
 
-- open a chooser of active `opencode` panes
+- open a chooser of active coding agent panes
 - jump straight to panes waiting on your answer
 - show the current pane state plus background session summary in the status line
 - use plugin-backed runtime state instead of relying only on sqlite heuristics
+
+Today the strongest runtime support is still for `opencode`, and the repo now also detects `codex` panes for discovery, switching, popup navigation, and status summaries.
 
 ## Install
 
@@ -244,6 +246,15 @@ Example:
 ```tmux
 set -g @opencode-tmux-provider 'plugin'
 ```
+
+## Codex
+
+`codex` panes are detected from the live tmux pane command, so they now show up in `list`, `switch`, `popup`, and `status` alongside `opencode` panes.
+
+Current Codex runtime support is intentionally coarse:
+
+- if a tmux pane is running a `codex` process, it is classified as `running`
+- waiting, question, and idle distinctions are still `opencode`-specific until a stronger Codex-local state source is added
 
 ## Troubleshooting
 

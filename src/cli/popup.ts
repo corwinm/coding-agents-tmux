@@ -85,6 +85,7 @@ function getSessionLabel(entry: PaneRuntimeSummary): string {
 function buildSearchText(entry: PaneRuntimeSummary): string {
   return [
     entry.pane.target,
+    entry.detection.agent ?? "",
     getPopupStateLabel(entry),
     getSessionLabel(entry),
     entry.pane.paneTitle || "(untitled)",

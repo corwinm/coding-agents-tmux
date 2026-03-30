@@ -1000,10 +1000,30 @@ function normalizeProvider(provider: RuntimeProviderName | undefined): RuntimePr
   return value;
 }
 
-export async function attachRuntimeToPanes(
+function attachRuntimeWithCodex(panes: DiscoveredPane[]): PaneRuntimeSummary[] {
+  return panes.map((entry) => ({
+    ...entry,
+    runtime: createRuntimeInfo({
+      activity: "busy",
+      status: "running",
+      source: "codex-command",
+      strategy: "exact",
+      provider: "codex",
+      heuristic: false,
+      session: null,
+      detail: `detected ${entry.pane.currentCommand} process in tmux pane`,
+    }),
+  }));
+}
+
+async function attachRuntimeWithOpencodeProvider(
   panes: DiscoveredPane[],
-  options: RuntimeProviderOptions = {},
+  options: RuntimeProviderOptions,
 ): Promise<PaneRuntimeSummary[]> {
+  if (panes.length === 0) {
+    return [];
+  }
+
   const provider = normalizeProvider(options.provider);
 
   if (provider === "plugin") {
@@ -1035,6 +1055,40 @@ export async function attachRuntimeToPanes(
   }
 
   return attachRuntimeWithServerMap(panes, options, true);
+}
+
+export async function attachRuntimeToPanes(
+  panes: DiscoveredPane[],
+  options: RuntimeProviderOptions = {},
+): Promise<PaneRuntimeSummary[]> {
+  const codexPanes = panes.filter((entry) => entry.detection.agent === "codex");
+  const opencodePanes = panes.filter((entry) => entry.detection.agent !== "codex");
+
+  if (codexPanes.length === 0) {
+    return attachRuntimeWithOpencodeProvider(panes, options);
+  }
+
+  if (opencodePanes.length === 0) {
+    return attachRuntimeWithCodex(panes);
+  }
+
+  const [opencodeResults, codexResults] = await Promise.all([
+    attachRuntimeWithOpencodeProvider(opencodePanes, options),
+    Promise.resolve(attachRuntimeWithCodex(codexPanes)),
+  ]);
+  const resultsByTarget = new Map(
+    [...opencodeResults, ...codexResults].map((entry) => [entry.pane.target, entry]),
+  );
+
+  return panes.map((entry) => {
+    const result = resultsByTarget.get(entry.pane.target);
+
+    if (!result) {
+      throw new Error(`missing runtime summary for pane ${entry.pane.target}`);
+    }
+
+    return result;
+  });
 }
 
 export function describeServerMapInput(value: string | undefined): string | null {

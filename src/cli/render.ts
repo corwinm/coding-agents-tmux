@@ -19,6 +19,7 @@ const statusShowPrefix = !["0", "false", "no", "off"].includes(
 
 const columns = [
   "TARGET",
+  "AGENT",
   "ACTIVE",
   "ACT",
   "STATUS",
@@ -29,6 +30,10 @@ const columns = [
   "PATH",
   "SIGNALS",
 ] as const;
+
+function formatAgentLabel(agent: PaneRuntimeSummary["detection"]["agent"]): string {
+  return agent ?? "none";
+}
 
 function pad(value: string, width: number): string {
   return value.padEnd(width, " ");
@@ -48,11 +53,12 @@ function truncate(value: string, maxWidth: number): string {
 
 export function renderPaneTable(panes: PaneRuntimeSummary[]): string {
   if (panes.length === 0) {
-    return "No likely opencode tmux panes found.";
+    return "No likely coding agent tmux panes found.";
   }
 
   const rows = panes.map((entry) => ({
     target: entry.pane.target,
+    agent: formatAgentLabel(entry.detection.agent),
     active: entry.pane.isActive ? "*" : "",
     activity: entry.runtime.activity,
     status: entry.runtime.status,
@@ -66,29 +72,31 @@ export function renderPaneTable(panes: PaneRuntimeSummary[]): string {
 
   const widths = {
     target: Math.max(columns[0].length, ...rows.map((row) => row.target.length)),
-    active: columns[1].length,
-    activity: Math.max(columns[2].length, ...rows.map((row) => row.activity.length)),
-    status: Math.max(columns[3].length, ...rows.map((row) => row.status.length)),
-    source: Math.max(columns[4].length, ...rows.map((row) => row.source.length)),
-    confidence: Math.max(columns[5].length, ...rows.map((row) => row.confidence.length)),
-    sessionTitle: Math.max(columns[6].length, ...rows.map((row) => row.sessionTitle.length)),
-    title: Math.max(columns[7].length, ...rows.map((row) => row.title.length)),
-    path: Math.max(columns[8].length, ...rows.map((row) => row.path.length)),
-    signals: Math.max(columns[9].length, ...rows.map((row) => row.signals.length)),
+    agent: Math.max(columns[1].length, ...rows.map((row) => row.agent.length)),
+    active: columns[2].length,
+    activity: Math.max(columns[3].length, ...rows.map((row) => row.activity.length)),
+    status: Math.max(columns[4].length, ...rows.map((row) => row.status.length)),
+    source: Math.max(columns[5].length, ...rows.map((row) => row.source.length)),
+    confidence: Math.max(columns[6].length, ...rows.map((row) => row.confidence.length)),
+    sessionTitle: Math.max(columns[7].length, ...rows.map((row) => row.sessionTitle.length)),
+    title: Math.max(columns[8].length, ...rows.map((row) => row.title.length)),
+    path: Math.max(columns[9].length, ...rows.map((row) => row.path.length)),
+    signals: Math.max(columns[10].length, ...rows.map((row) => row.signals.length)),
   };
 
   const lines = [
     [
       pad(columns[0], widths.target),
-      pad(columns[1], widths.active),
-      pad(columns[2], widths.activity),
-      pad(columns[3], widths.status),
-      pad(columns[4], widths.source),
-      pad(columns[5], widths.confidence),
-      pad(columns[6], widths.sessionTitle),
-      pad(columns[7], widths.title),
-      pad(columns[8], widths.path),
-      pad(columns[9], widths.signals),
+      pad(columns[1], widths.agent),
+      pad(columns[2], widths.active),
+      pad(columns[3], widths.activity),
+      pad(columns[4], widths.status),
+      pad(columns[5], widths.source),
+      pad(columns[6], widths.confidence),
+      pad(columns[7], widths.sessionTitle),
+      pad(columns[8], widths.title),
+      pad(columns[9], widths.path),
+      pad(columns[10], widths.signals),
     ].join("  "),
   ];
 
@@ -96,6 +104,7 @@ export function renderPaneTable(panes: PaneRuntimeSummary[]): string {
     lines.push(
       [
         pad(row.target, widths.target),
+        pad(row.agent, widths.agent),
         pad(row.active, widths.active),
         pad(row.activity, widths.activity),
         pad(row.status, widths.status),
@@ -158,7 +167,7 @@ export function renderInspectResult(result: InspectResult): string {
     `  TTY: ${pane.tty}`,
     "",
     "Detection",
-    `  Is OpenCode: ${formatBoolean(detection.isOpencode)}`,
+    `  Agent: ${formatAgentLabel(detection.agent)}`,
     `  Confidence: ${detection.confidence}`,
     `  Signals: ${detection.reasons.length > 0 ? detection.reasons.join(", ") : "none"}`,
     "",
@@ -188,13 +197,14 @@ export function renderInspectResult(result: InspectResult): string {
 
 export function renderSwitchChoices(panes: PaneRuntimeSummary[]): string {
   if (panes.length === 0) {
-    return "No likely opencode tmux panes found.";
+    return "No likely coding agent tmux panes found.";
   }
 
   const rows = panes.map((entry, index) => {
     return {
       index: String(index + 1),
       active: entry.pane.isActive ? "*" : "",
+      agent: formatAgentLabel(entry.detection.agent),
       target: entry.pane.target,
       status: getPaneStatusSymbol(entry),
       sessionTitle: truncate(entry.runtime.session?.title ?? "(unmatched)", 18),
@@ -206,6 +216,7 @@ export function renderSwitchChoices(panes: PaneRuntimeSummary[]): string {
   const widths = {
     index: Math.max(1, ...rows.map((row) => row.index.length)),
     active: 1,
+    agent: Math.max("AGENT".length, ...rows.map((row) => row.agent.length)),
     target: Math.max("TARGET".length, ...rows.map((row) => row.target.length)),
     status: Math.max("S".length, ...rows.map((row) => row.status.length)),
     sessionTitle: Math.max("SESSION".length, ...rows.map((row) => row.sessionTitle.length)),
@@ -213,11 +224,12 @@ export function renderSwitchChoices(panes: PaneRuntimeSummary[]): string {
   };
 
   const lines = [
-    "Select an opencode pane:",
+    "Select a coding agent pane:",
     "",
     [
       pad("#", widths.index),
       pad("*", widths.active),
+      pad("AGENT", widths.agent),
       pad("TARGET", widths.target),
       pad("S", widths.status),
       pad("SESSION", widths.sessionTitle),
@@ -231,6 +243,7 @@ export function renderSwitchChoices(panes: PaneRuntimeSummary[]): string {
       [
         pad(row.index, widths.index),
         pad(row.active, widths.active),
+        pad(row.agent, widths.agent),
         pad(row.target, widths.target),
         pad(row.status, widths.status),
         pad(row.sessionTitle, widths.sessionTitle),

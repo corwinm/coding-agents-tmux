@@ -38,7 +38,7 @@ function createDiscoveredPane(overrides: Partial<TmuxPane> = {}): DiscoveredPane
   return {
     pane,
     detection: {
-      isOpencode: true,
+      agent: "opencode",
       confidence: "high",
       reasons: ["title:OpenCode", "command:opencode"],
     },
@@ -497,6 +497,36 @@ test("runtime provider helpers expose provider docs, template output, and valida
   await assert.rejects(
     attachRuntimeToPanes([createDiscoveredPane()], { provider: "bogus" as never }),
     /invalid runtime provider: bogus/,
+  );
+});
+
+test("codex panes use a coarse command-backed runtime classification", async () => {
+  const summaries = await attachRuntimeToPanes(
+    [
+      {
+        pane: createPane({
+          target: "work:1.4",
+          paneIndex: 4,
+          paneTitle: "shell",
+          currentCommand: "codex-aarch64-apple-darwin",
+        }),
+        detection: {
+          agent: "codex",
+          confidence: "medium",
+          reasons: ["command:codex"],
+        },
+      },
+    ],
+    { provider: "auto" },
+  );
+
+  assert.equal(getRuntime(getSummary(summaries, 0)).status, "running");
+  assert.equal(getRuntime(getSummary(summaries, 0)).activity, "busy");
+  assert.equal(getRuntime(getSummary(summaries, 0)).source, "codex-command");
+  assert.equal(getRuntime(getSummary(summaries, 0)).match.provider, "codex");
+  assert.equal(
+    getRuntime(getSummary(summaries, 0)).detail,
+    "detected codex-aarch64-apple-darwin process in tmux pane",
   );
 });
 

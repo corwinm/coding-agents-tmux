@@ -134,7 +134,7 @@ function createSummary(
   return {
     pane,
     detection: overrides.detection ?? {
-      isOpencode: true,
+      agent: "opencode",
       confidence: "high",
       reasons: ["title:OpenCode", "command:opencode"],
     },
@@ -400,7 +400,7 @@ exit 1
     assert.equal(payload.target, "work:1.0");
     assert.equal(payload.summary.pane.target, "work:1.0");
     assert.deepEqual(payload.summary.detection, {
-      isOpencode: true,
+      agent: "opencode",
       confidence: "high",
       reasons: ["title:OpenCode", "command:opencode"],
     });

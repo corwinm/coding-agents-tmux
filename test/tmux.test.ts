@@ -8,8 +8,8 @@ import {
   capturePanePreview,
   captureWindowPreview,
   buildSwitchToPaneCommand,
-  detectOpencodePane,
-  discoverOpencodePanesFromList,
+  detectAgentPane,
+  discoverAgentPanesFromList,
   getCurrentTmuxTarget,
   listAllPanes,
   normalizeCapturedPaneLines,
@@ -80,18 +80,18 @@ ${resolvedScript}
   return { pathEntry: dir, logPath };
 }
 
-test("detectOpencodePane recognizes OC title prefixes, medium-confidence blends, and no-signal panes", () => {
+test("detectAgentPane recognizes OpenCode, Codex, and no-signal panes", () => {
   assert.deepEqual(
-    detectOpencodePane(createPane({ paneTitle: "OC | reviewing", currentCommand: "bash" })),
+    detectAgentPane(createPane({ paneTitle: "OC | reviewing", currentCommand: "bash" })),
     {
-      isOpencode: true,
+      agent: "opencode",
       confidence: "high",
       reasons: ["title:OC prefix"],
     },
   );
 
   assert.deepEqual(
-    detectOpencodePane(
+    detectAgentPane(
       createPane({
         paneTitle: "shell",
         currentCommand: "opencode",
@@ -99,18 +99,29 @@ test("detectOpencodePane recognizes OC title prefixes, medium-confidence blends,
       }),
     ),
     {
-      isOpencode: true,
+      agent: "opencode",
       confidence: "medium",
       reasons: ["command:opencode", "path:opencode-like"],
     },
   );
 
   assert.deepEqual(
-    detectOpencodePane(
+    detectAgentPane(
+      createPane({ paneTitle: "shell", currentCommand: "codex-aarch64-apple-darwin" }),
+    ),
+    {
+      agent: "codex",
+      confidence: "medium",
+      reasons: ["command:codex"],
+    },
+  );
+
+  assert.deepEqual(
+    detectAgentPane(
       createPane({ paneTitle: "shell", currentCommand: "bash", currentPath: "/tmp/project" }),
     ),
     {
-      isOpencode: false,
+      agent: null,
       confidence: "low",
       reasons: [],
     },
@@ -147,7 +158,7 @@ test("parsePaneLine and parseListAllPanesOutput parse tmux rows and reject malfo
   assert.throws(() => parsePaneLine("too\tfew\tfields"), /Unexpected tmux output/);
 });
 
-test("discoverOpencodePanesFromList filters non-opencode panes and sorts targets", () => {
+test("discoverAgentPanesFromList filters non-agent panes and sorts targets", () => {
   const panes = [
     createPane({ target: "work:2.1", windowIndex: 2, paneIndex: 1 }),
     createPane({
@@ -156,12 +167,18 @@ test("discoverOpencodePanesFromList filters non-opencode panes and sorts targets
       paneTitle: "shell",
       currentPath: "/tmp/project",
     }),
+    createPane({
+      target: "work:1.1",
+      paneIndex: 1,
+      paneTitle: "shell",
+      currentCommand: "codex",
+    }),
     createPane({ target: "work:1.2", paneIndex: 2 }),
   ];
 
   assert.deepEqual(
-    discoverOpencodePanesFromList(panes).map((entry) => entry.pane.target),
-    ["work:1.2", "work:2.1"],
+    discoverAgentPanesFromList(panes).map((entry) => entry.pane.target),
+    ["work:1.1", "work:1.2", "work:2.1"],
   );
 });
 

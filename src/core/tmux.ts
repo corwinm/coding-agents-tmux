@@ -1,4 +1,5 @@
 import type {
+  AgentKind,
   DiscoveredPane,
   DetectionConfidence,
   PaneTarget,
@@ -40,47 +41,113 @@ const TMUX_FIELDS = [
 const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, "g");
 
 function formatConfidence(reasons: string[]): DetectionConfidence {
-  if (reasons.some((reason) => reason.startsWith("title:"))) {
-    return "high";
+  if (
+    reasons.some((reason) => reason.startsWith("title:")) ||
+    reasons.some((reason) => reason.startsWith("command:"))
+  ) {
+    if (reasons.some((reason) => reason.startsWith("title:"))) {
+      return "high";
+    }
+
+    return "medium";
   }
 
   if (reasons.length >= 2) {
-    return "medium";
+    return "high";
   }
 
   return "low";
 }
 
-export function detectOpencodePane(pane: TmuxPane): PaneDetection {
-  const reasons: string[] = [];
+function matchesCommand(command: string, binaryName: string): boolean {
+  return command === binaryName || command.startsWith(`${binaryName}-`);
+}
+
+function pickDetectedAgent(
+  candidates: Array<{
+    agent: AgentKind;
+    reasons: string[];
+    score: number;
+  }>,
+): { agent: AgentKind; reasons: string[] } | null {
+  return candidates.reduce<{ agent: AgentKind; reasons: string[]; score: number } | null>(
+    (best, candidate) => {
+      if (!best || candidate.score > best.score) {
+        return candidate;
+      }
+
+      return best;
+    },
+    null,
+  );
+}
+
+export function detectAgentPane(pane: TmuxPane): PaneDetection {
   const title = pane.paneTitle.trim();
+  const lowerTitle = title.toLowerCase();
   const path = pane.currentPath.toLowerCase();
   const command = pane.currentCommand.toLowerCase();
-  let strongMatch = false;
+  const opencodeReasons: string[] = [];
+  const codexReasons: string[] = [];
+  const candidates: Array<{ agent: AgentKind; reasons: string[]; score: number }> = [];
 
   if (title === "OpenCode") {
-    reasons.push("title:OpenCode");
-    strongMatch = true;
+    opencodeReasons.push("title:OpenCode");
   }
 
   if (title.startsWith("OC | ")) {
-    reasons.push("title:OC prefix");
-    strongMatch = true;
+    opencodeReasons.push("title:OC prefix");
   }
 
-  if (command === "opencode") {
-    reasons.push("command:opencode");
-    strongMatch = true;
+  if (matchesCommand(command, "opencode")) {
+    opencodeReasons.push("command:opencode");
   }
 
   if (path.includes("/opencode") || path.includes("opencode-")) {
-    reasons.push("path:opencode-like");
+    opencodeReasons.push("path:opencode-like");
+  }
+
+  if (lowerTitle === "codex" || lowerTitle.startsWith("openai codex")) {
+    codexReasons.push("title:Codex");
+  }
+
+  if (matchesCommand(command, "codex")) {
+    codexReasons.push("command:codex");
+  }
+
+  if (opencodeReasons.some((reason) => !reason.startsWith("path:"))) {
+    candidates.push({
+      agent: "opencode",
+      reasons: opencodeReasons,
+      score:
+        opencodeReasons.includes("title:OpenCode") || opencodeReasons.includes("title:OC prefix")
+          ? 5
+          : 4,
+    });
+  }
+
+  if (codexReasons.length > 0) {
+    candidates.push({
+      agent: "codex",
+      reasons: codexReasons,
+      score: codexReasons.includes("command:codex") ? 5 : 4,
+    });
+  }
+
+  const detected = pickDetectedAgent(candidates);
+
+  if (detected) {
+    return {
+      agent: detected.agent,
+      confidence: formatConfidence(detected.reasons),
+      reasons: detected.reasons,
+    };
   }
 
   return {
-    isOpencode: strongMatch,
-    confidence: formatConfidence(reasons),
-    reasons,
+    agent: null,
+    confidence: formatConfidence(opencodeReasons),
+    reasons: opencodeReasons,
   };
 }
 
@@ -149,18 +216,18 @@ export function parsePaneLine(line: string): TmuxPane {
   };
 }
 
-export function discoverOpencodePanesFromList(panes: TmuxPane[]): DiscoveredPane[] {
+export function discoverAgentPanesFromList(panes: TmuxPane[]): DiscoveredPane[] {
   return panes
     .map((pane) => ({
       pane,
-      detection: detectOpencodePane(pane),
+      detection: detectAgentPane(pane),
     }))
-    .filter((entry) => entry.detection.isOpencode)
+    .filter((entry) => entry.detection.agent !== null)
     .sort((left, right) => left.pane.target.localeCompare(right.pane.target));
 }
 
-export async function discoverOpencodePanes(): Promise<DiscoveredPane[]> {
-  return discoverOpencodePanesFromList(await listAllPanes());
+export async function discoverAgentPanes(): Promise<DiscoveredPane[]> {
+  return discoverAgentPanesFromList(await listAllPanes());
 }
 
 export function findDiscoveredPaneByTarget(

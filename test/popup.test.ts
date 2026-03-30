@@ -76,7 +76,7 @@ function createSummary(
   return {
     pane,
     detection: overrides.detection ?? {
-      isOpencode: true,
+      agent: "opencode",
       confidence: "high",
       reasons: ["title:OpenCode", "command:opencode"],
     },
@@ -121,7 +121,7 @@ async function nextTick(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-test("matchesQuery and filterPanes search across target, status, session, title, and path", () => {
+test("matchesQuery and filterPanes search across target, agent, status, session, title, and path", () => {
   const waitingPane = createSummary("waiting-question", {
     pane: createPane({
       target: "work:1.2",
@@ -145,6 +145,7 @@ test("matchesQuery and filterPanes search across target, status, session, title,
   });
 
   assert.equal(matchesQuery(waitingPane, "work:1.2 waiting customer review"), true);
+  assert.equal(matchesQuery(waitingPane, "opencode customer"), true);
   assert.equal(matchesQuery(waitingPane, "customer missing-token"), false);
   assert.deepEqual(
     filterPanes([waitingPane, idlePane], "customer waiting").map((entry) => entry.pane.target),

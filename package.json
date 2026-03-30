@@ -2,7 +2,7 @@
   "name": "opencode-tmux",
   "version": "0.0.1",
   "private": true,
-  "description": "CLI tooling for discovering and navigating opencode sessions running in tmux",
+  "description": "CLI tooling for discovering and navigating coding agent sessions running in tmux",
   "bin": {
     "opencode-tmux": "bin/opencode-tmux"
   },

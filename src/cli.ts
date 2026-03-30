@@ -22,7 +22,7 @@ import {
   getRuntimeProviderHelpText,
 } from "./core/opencode.ts";
 import {
-  discoverOpencodePanes,
+  discoverAgentPanes,
   findDiscoveredPaneByTarget,
   getCurrentTmuxTarget,
   switchToPane,
@@ -154,7 +154,7 @@ const STATUS_REFRESH_HOOKS = [
 ] as const;
 
 async function loadPaneRuntimeSummaries(options: RuntimeProviderOptions = {}) {
-  const panes = await discoverOpencodePanes();
+  const panes = await discoverAgentPanes();
   return attachRuntimeToPanes(panes, options);
 }
 
@@ -294,11 +294,11 @@ async function runListCommand(options: ListOptions): Promise<void> {
 }
 
 async function runInspectCommand(target: string, options: InspectOptions): Promise<void> {
-  const panes = await discoverOpencodePanes();
+  const panes = await discoverAgentPanes();
   const pane = findDiscoveredPaneByTarget(panes, target as PaneTarget);
 
   if (!pane) {
-    throw new Error(`No discovered opencode pane matches target ${target}`);
+    throw new Error(`No discovered coding agent pane matches target ${target}`);
   }
 
   const summary = (await attachRuntimeToPanes([pane], options))[0];
@@ -324,7 +324,7 @@ function requirePaneByTarget(panes: PaneRuntimeSummary[], target: string): PaneR
   const pane = panes.find((entry) => entry.pane.target === target);
 
   if (!pane) {
-    throw new Error(`No discovered opencode pane matches target ${target}`);
+    throw new Error(`No discovered coding agent pane matches target ${target}`);
   }
 
   return pane;
@@ -382,7 +382,7 @@ async function runSwitchFilteredCommand(
   const panes = filterPaneSummaries(await loadPaneRuntimeSummaries(options), options);
 
   if (panes.length === 0) {
-    throw new Error("No discovered opencode panes match the requested filters");
+    throw new Error("No discovered coding agent panes match the requested filters");
   }
 
   const pane = target ? requirePaneByTarget(panes, target) : await promptForPaneSelection(panes);
@@ -449,7 +449,7 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
     "-h",
     options.height ?? "100%",
     "-T",
-    options.title ?? "OpenCode Sessions",
+    options.title ?? "Coding Agent Sessions",
     popupCommand,
   ];
 
@@ -457,7 +457,7 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
 }
 
 async function runServerMapTemplateCommand(options: ServerMapTemplateOptions): Promise<void> {
-  const panes = await discoverOpencodePanes();
+  const panes = await discoverAgentPanes();
   const basePort = parsePort(options.basePort, "base port");
   const templateOptions: { basePort?: number; hostname?: string } = {};
 
@@ -615,9 +615,9 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
   return [
     "# >>> opencode-tmux >>>",
     `bind-key ${menuKey} run-shell ${tmuxDoubleQuote(menuCommand)}`,
-    `bind-key ${popupKey} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("OpenCode Sessions")} ${tmuxDoubleQuote(popupCommand)}`,
+    `bind-key ${popupKey} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("Coding Agent Sessions")} ${tmuxDoubleQuote(popupCommand)}`,
     `bind-key ${waitingMenuKey} run-shell ${tmuxDoubleQuote(waitingMenuCommand)}`,
-    `bind-key ${waitingPopupKey} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("OpenCode Sessions (Waiting)")} ${tmuxDoubleQuote(waitingPopupCommand)}`,
+    `bind-key ${waitingPopupKey} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("Coding Agent Sessions (Waiting)")} ${tmuxDoubleQuote(waitingPopupCommand)}`,
     "set -g status-interval 0",
     ...statusRefreshHookLines,
     `set -g status-right ${tmuxDoubleQuote(`#(${statusCommand})`)}`,
@@ -661,14 +661,14 @@ async function main(): Promise<void> {
 
   program
     .name("opencode-tmux")
-    .description("CLI tooling for discovering and navigating opencode sessions running in tmux")
+    .description("CLI tooling for discovering and navigating coding agent sessions running in tmux")
     .showHelpAfterError();
 
   program.addHelpText("after", `\n${getRuntimeProviderHelpText()}`);
 
   program
     .command("list")
-    .description("List likely opencode tmux panes")
+    .description("List likely coding agent tmux panes")
     .option("--compact", "Print tab-separated tmux-friendly output")
     .option("--json", "Print machine-readable JSON")
     .option(
@@ -690,7 +690,7 @@ async function main(): Promise<void> {
 
   program
     .command("inspect")
-    .description("Inspect one discovered opencode tmux pane")
+    .description("Inspect one discovered coding agent tmux pane")
     .argument("<target>", "Pane target in session:window.pane format")
     .option("--json", "Print machine-readable JSON")
     .option(
@@ -706,7 +706,7 @@ async function main(): Promise<void> {
 
   program
     .command("switch")
-    .description("Switch tmux to one discovered opencode pane")
+    .description("Switch tmux to one discovered coding agent pane")
     .argument("[target]", "Pane target in session:window.pane format")
     .option(
       "--provider <provider>",
@@ -735,7 +735,7 @@ async function main(): Promise<void> {
 
   program
     .command("popup")
-    .description("Open a tmux popup chooser for switching between discovered opencode panes")
+    .description("Open a tmux popup chooser for switching between discovered coding agent panes")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -751,7 +751,7 @@ async function main(): Promise<void> {
     .option("--running", "Only include panes with runtime status 'running'")
     .option("--width <value>", "Popup width", "100%")
     .option("--height <value>", "Popup height", "100%")
-    .option("--title <value>", "Popup title", "OpenCode Sessions")
+    .option("--title <value>", "Popup title", "Coding Agent Sessions")
     .option("--print-command", "Print the popup's inner switch command instead of opening tmux")
     .action(runPopupCommand);
 
@@ -777,7 +777,10 @@ async function main(): Promise<void> {
     .command("status")
     .description("Print a tmux-friendly status summary")
     .option("--json", "Print machine-readable JSON")
-    .option("--summary", "Summarize all discovered opencode panes instead of the current tmux pane")
+    .option(
+      "--summary",
+      "Summarize all discovered coding agent panes instead of the current tmux pane",
+    )
     .option("--tone", "Print only the current summary tone")
     .option("--style <style>", "Status output style: plain or tmux", "plain")
     .option(

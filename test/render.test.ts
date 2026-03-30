@@ -11,7 +11,7 @@ import {
   renderStatusTone,
   renderSwitchChoices,
 } from "../src/cli/render.ts";
-import { detectOpencodePane, findDiscoveredPaneByTarget } from "../src/core/tmux.ts";
+import { detectAgentPane, findDiscoveredPaneByTarget } from "../src/core/tmux.ts";
 import type {
   DiscoveredPane,
   PaneRuntimeSummary,
@@ -76,7 +76,7 @@ function createSummary(
   return {
     pane,
     detection: overrides.detection ?? {
-      isOpencode: true,
+      agent: "opencode",
       confidence: "high",
       reasons: ["title:OpenCode", "command:opencode"],
     },
@@ -107,29 +107,29 @@ function setEnv(updates: Record<string, string | undefined>): () => void {
   };
 }
 
-test("detectOpencodePane recognizes strong title and command signals", () => {
+test("detectAgentPane recognizes strong OpenCode title and command signals", () => {
   const pane = createPane({
     paneTitle: "OpenCode",
     currentCommand: "opencode",
     currentPath: "/tmp/project",
   });
 
-  assert.deepEqual(detectOpencodePane(pane), {
-    isOpencode: true,
+  assert.deepEqual(detectAgentPane(pane), {
+    agent: "opencode",
     confidence: "high",
     reasons: ["title:OpenCode", "command:opencode"],
   });
 });
 
-test("detectOpencodePane keeps path-only matches low confidence and not opencode", () => {
+test("detectAgentPane keeps path-only matches low confidence and unmatched", () => {
   const pane = createPane({
     paneTitle: "shell",
     currentCommand: "bash",
     currentPath: "/tmp/opencode-scratch",
   });
 
-  assert.deepEqual(detectOpencodePane(pane), {
-    isOpencode: false,
+  assert.deepEqual(detectAgentPane(pane), {
+    agent: null,
     confidence: "low",
     reasons: ["path:opencode-like"],
   });
@@ -139,8 +139,8 @@ test("findDiscoveredPaneByTarget finds matching panes", () => {
   const firstPane = createPane({ target: "work:1.0" });
   const secondPane = createPane({ target: "work:1.1", paneIndex: 1 });
   const panes: DiscoveredPane[] = [
-    { pane: firstPane, detection: detectOpencodePane(firstPane) },
-    { pane: secondPane, detection: detectOpencodePane(secondPane) },
+    { pane: firstPane, detection: detectAgentPane(firstPane) },
+    { pane: secondPane, detection: detectAgentPane(secondPane) },
   ];
 
   assert.equal(findDiscoveredPaneByTarget(panes, "work:1.1"), panes[1]);
@@ -226,14 +226,14 @@ test("renderSwitchChoices shows numbered choices with truncated metadata", () =>
 
   const output = renderSwitchChoices(panes);
 
-  assert.match(output, /Select an opencode pane:/);
-  assert.match(output, /#\s+\*\s+TARGET\s+S\s+SESSION\s+TITLE\s+PATH/);
-  assert.match(output, /1\s+\*\s+work:1\.0\s+/);
+  assert.match(output, /Select a coding agent pane:/);
+  assert.match(output, /#\s+\*\s+AGENT\s+TARGET\s+S\s+SESSION\s+TITLE\s+PATH/);
+  assert.match(output, /1\s+\*\s+opencode\s+work:1\.0\s+/);
   assert.match(output, /A very long sessi\.\.\./);
 });
 
 test("renderPaneTable covers empty, tabular, and truncated output", () => {
-  assert.equal(renderPaneTable([]), "No likely opencode tmux panes found.");
+  assert.equal(renderPaneTable([]), "No likely coding agent tmux panes found.");
 
   const pane = createSummary("running", {
     pane: createPane({
@@ -256,9 +256,10 @@ test("renderPaneTable covers empty, tabular, and truncated output", () => {
 
   assert.match(
     output,
-    /TARGET\s+ACTIVE\s+ACT\s+STATUS\s+SRC\s+CONF\s+SESSION\s+TITLE\s+PATH\s+SIGNALS/,
+    /TARGET\s+AGENT\s+ACTIVE\s+ACT\s+STATUS\s+SRC\s+CONF\s+SESSION\s+TITLE\s+PATH\s+SIGNALS/,
   );
   assert.match(output, /work:1\.0/);
+  assert.match(output, /opencode/);
   assert.match(output, /A very long session title that sh\.\.\./);
   assert.match(output, /A very long pane title that should be t\.\.\./);
   assert.match(output, /\/very\/long\/path\/that\/needs\/to\/be\/truncated\/beca\.\.\./);
@@ -322,6 +323,7 @@ test("renderInspectResult includes pane, detection, and session details", () => 
   });
 
   assert.match(withSession, /Target: work:1\.0/);
+  assert.match(withSession, /Agent: opencode/);
   assert.match(withSession, /Session ID: sess-1/);
   assert.match(withSession, /Session Updated: 1970-01-01T00:00:00\.000Z/);
   assert.match(withoutSession, /Session: none/);
@@ -346,7 +348,7 @@ test("renderStatusSummary supports tmux formatting and compact background mode",
 });
 
 test("renderSwitchChoices shows empty state and status summary honors custom tmux colors", async () => {
-  assert.equal(renderSwitchChoices([]), "No likely opencode tmux panes found.");
+  assert.equal(renderSwitchChoices([]), "No likely coding agent tmux panes found.");
 
   const restoreEnv = setEnv({
     OPENCODE_TMUX_STATUS_PREFIX: "OC",

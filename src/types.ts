@@ -1,5 +1,7 @@
 export type PaneTarget = `${string}:${number}.${number}`;
 
+export type AgentKind = "opencode" | "codex";
+
 export interface TmuxPane {
   sessionName: string;
   windowIndex: number;
@@ -16,7 +18,7 @@ export interface TmuxPane {
 export type DetectionConfidence = "high" | "medium" | "low";
 
 export interface PaneDetection {
-  isOpencode: boolean;
+  agent: AgentKind | null;
   confidence: DetectionConfidence;
   reasons: string[];
 }
@@ -50,6 +52,7 @@ export type RuntimeSource =
   | "sqlite-descendant-running"
   | "sqlite-descendant-recent"
   | "sqlite-descendant-only"
+  | "codex-command"
   | "unmapped";
 
 export interface RuntimeMatchInfo {
@@ -60,7 +63,7 @@ export interface RuntimeMatchInfo {
     | "descendant-recent"
     | "descendant-only"
     | "unmapped";
-  provider: "plugin" | "server" | "sqlite" | "none";
+  provider: "plugin" | "server" | "sqlite" | "codex" | "none";
   heuristic: boolean;
 }
 
