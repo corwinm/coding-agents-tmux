@@ -17,7 +17,13 @@ import {
   renderSwitchChoices,
 } from "./cli/render.ts";
 import {
+  buildCodexHooksTemplate,
+  installCodexIntegration,
+  persistCodexHookState,
+} from "./core/codex.ts";
+import {
   attachRuntimeToPanes,
+  buildInspectDebugInfo,
   buildServerMapTemplate,
   getRuntimeProviderHelpText,
 } from "./core/opencode.ts";
@@ -44,7 +50,10 @@ interface ListOptions extends PaneFilterOptions, RuntimeProviderOptions {
 }
 
 interface InspectOptions extends RuntimeProviderOptions {
+  debug?: boolean;
+  interval?: string;
   json?: boolean;
+  watch?: boolean;
 }
 
 interface SwitchOptions extends PaneFilterOptions, RuntimeProviderOptions {}
@@ -71,6 +80,7 @@ interface StatusOptions extends RuntimeProviderOptions {
 }
 
 interface TmuxConfigOptions extends RuntimeProviderOptions {
+  agent?: "all" | "opencode" | "codex";
   menuKey?: string;
   popupKey?: string;
   waitingMenuKey?: string;
@@ -81,6 +91,8 @@ interface TmuxConfigOptions extends RuntimeProviderOptions {
 interface InstallTmuxOptions extends TmuxConfigOptions {
   file?: string;
 }
+
+interface InstallCodexOptions {}
 
 function getWindowKey(sessionName: string, windowIndex: number): string {
   return `${sessionName}:${windowIndex}`;
@@ -236,6 +248,16 @@ function clearScreen(): void {
   output.write("\u001Bc");
 }
 
+async function readStdinText(): Promise<string> {
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of input) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 async function watchListCommand(options: ListOptions): Promise<void> {
   const intervalSeconds = parseWatchInterval(options.interval);
 
@@ -258,7 +280,17 @@ export function filterPaneSummaries(
   panes: PaneRuntimeSummary[],
   options: PaneFilterOptions,
 ): PaneRuntimeSummary[] {
+  const agent = options.agent ?? "all";
+
+  if (agent !== "all" && agent !== "opencode" && agent !== "codex") {
+    throw new Error(`Invalid agent filter: ${agent}`);
+  }
+
   return panes.filter((entry) => {
+    if (agent !== "all" && entry.detection.agent !== agent) {
+      return false;
+    }
+
     if (options.active && !entry.pane.isActive) {
       return false;
     }
@@ -293,7 +325,7 @@ async function runListCommand(options: ListOptions): Promise<void> {
   console.log(renderListOutput(panesWithRuntime, options));
 }
 
-async function runInspectCommand(target: string, options: InspectOptions): Promise<void> {
+async function renderInspectOutput(target: string, options: InspectOptions): Promise<string> {
   const panes = await discoverAgentPanes();
   const pane = findDiscoveredPaneByTarget(panes, target as PaneTarget);
 
@@ -312,12 +344,41 @@ async function runInspectCommand(target: string, options: InspectOptions): Promi
     summary,
   };
 
+  if (options.debug) {
+    result.debug = await buildInspectDebugInfo(pane);
+  }
+
+  return options.json ? JSON.stringify(result, null, 2) : renderInspectResult(result);
+}
+
+async function watchInspectCommand(target: string, options: InspectOptions): Promise<void> {
   if (options.json) {
-    console.log(JSON.stringify(result, null, 2));
+    throw new Error("Inspect watch mode does not support --json");
+  }
+
+  if (!output.isTTY) {
+    throw new Error("Inspect watch mode requires a TTY");
+  }
+
+  const intervalSeconds = parseWatchInterval(options.interval);
+
+  for (;;) {
+    clearScreen();
+    console.log(`opencode-tmux inspect ${target} --watch (${new Date().toLocaleTimeString()})`);
+    console.log(`refresh every ${intervalSeconds}s`);
+    console.log();
+    console.log(await renderInspectOutput(target, options));
+    await sleep(intervalSeconds * 1000);
+  }
+}
+
+async function runInspectCommand(target: string, options: InspectOptions): Promise<void> {
+  if (options.watch) {
+    await watchInspectCommand(target, options);
     return;
   }
 
-  console.log(renderInspectResult(result));
+  console.log(await renderInspectOutput(target, options));
 }
 
 function requirePaneByTarget(panes: PaneRuntimeSummary[], target: string): PaneRuntimeSummary {
@@ -410,6 +471,10 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
     switchArgs.push("--provider", options.provider);
   }
 
+  if (options.agent) {
+    switchArgs.push("--agent", options.agent);
+  }
+
   if (options.serverMap) {
     switchArgs.push("--server-map", options.serverMap);
   }
@@ -474,6 +539,28 @@ async function runServerMapTemplateCommand(options: ServerMapTemplateOptions): P
     templateOptions,
   );
   console.log(JSON.stringify(template, null, 2));
+}
+
+async function runCodexHooksTemplateCommand(): Promise<void> {
+  console.log(buildCodexHooksTemplate(buildSelfCommand(["codex-hook-state"])));
+}
+
+async function runCodexHookStateCommand(): Promise<void> {
+  const rawInput = await readStdinText();
+
+  if (!rawInput.trim()) {
+    throw new Error("codex-hook-state requires a JSON payload on stdin");
+  }
+
+  await persistCodexHookState(rawInput);
+}
+
+async function runInstallCodexCommand(_options: InstallCodexOptions): Promise<void> {
+  const result = installCodexIntegration(buildSelfCommand(["codex-hook-state"]));
+
+  console.log(`Updated ${result.configPath}`);
+  console.log(`Updated ${result.hooksPath}`);
+  console.log("Restart Codex sessions so new hooks are loaded");
 }
 
 interface StatusOutputContext {
@@ -591,6 +678,12 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
     statusArgs.push("--provider", options.provider);
   }
 
+  if (options.agent) {
+    switchArgs.push("--agent", options.agent);
+    waitingArgs.push("--agent", options.agent);
+    statusArgs.push("--agent", options.agent);
+  }
+
   if (options.serverMap) {
     switchArgs.push("--server-map", options.serverMap);
     waitingArgs.push("--server-map", options.serverMap);
@@ -671,6 +764,7 @@ async function main(): Promise<void> {
     .description("List likely coding agent tmux panes")
     .option("--compact", "Print tab-separated tmux-friendly output")
     .option("--json", "Print machine-readable JSON")
+    .option("--agent <agent>", "Limit panes to all, opencode, or codex", "all")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -692,7 +786,10 @@ async function main(): Promise<void> {
     .command("inspect")
     .description("Inspect one discovered coding agent tmux pane")
     .argument("<target>", "Pane target in session:window.pane format")
+    .option("--watch", "Refresh the inspect view continuously")
+    .option("--interval <seconds>", "Refresh interval in watch mode", "0.5")
     .option("--json", "Print machine-readable JSON")
+    .option("--debug", "Include Codex hook and preview debug details")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -708,6 +805,7 @@ async function main(): Promise<void> {
     .command("switch")
     .description("Switch tmux to one discovered coding agent pane")
     .argument("[target]", "Pane target in session:window.pane format")
+    .option("--agent <agent>", "Limit panes to all, opencode, or codex", "all")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -734,8 +832,24 @@ async function main(): Promise<void> {
     .action(runServerMapTemplateCommand);
 
   program
+    .command("codex-hooks-template")
+    .description("Print a Codex hooks.json template for higher-fidelity Codex tmux state")
+    .action(runCodexHooksTemplateCommand);
+
+  program
+    .command("codex-hook-state")
+    .description("Ingest one Codex hook payload from stdin and update local runtime state")
+    .action(runCodexHookStateCommand);
+
+  program
+    .command("install-codex")
+    .description("Install or update Codex hook configuration under ~/.codex")
+    .action(runInstallCodexCommand);
+
+  program
     .command("popup")
     .description("Open a tmux popup chooser for switching between discovered coding agent panes")
+    .option("--agent <agent>", "Limit panes to all, opencode, or codex", "all")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -758,6 +872,7 @@ async function main(): Promise<void> {
   program
     .command("popup-ui")
     .description("Run the interactive popup selector in the current terminal")
+    .option("--agent <agent>", "Limit panes to all, opencode, or codex", "all")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -777,6 +892,7 @@ async function main(): Promise<void> {
     .command("status")
     .description("Print a tmux-friendly status summary")
     .option("--json", "Print machine-readable JSON")
+    .option("--agent <agent>", "Limit panes to all, opencode, or codex", "all")
     .option(
       "--summary",
       "Summarize all discovered coding agent panes instead of the current tmux pane",
@@ -797,6 +913,7 @@ async function main(): Promise<void> {
   program
     .command("tmux-config")
     .description("Print a tmux config snippet for popup and status-line integration")
+    .option("--agent <agent>", "Limit panes to all, opencode, or codex", "all")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -824,6 +941,7 @@ async function main(): Promise<void> {
   program
     .command("install-tmux")
     .description("Install or update an opencode-tmux snippet in a tmux config file")
+    .option("--agent <agent>", "Limit panes to all, opencode, or codex", "all")
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",

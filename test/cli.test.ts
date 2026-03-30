@@ -156,12 +156,16 @@ test("parseWatchInterval and parsePort accept valid values and reject invalid on
   assert.throws(() => parsePort("1.2", "base port"), /Invalid base port/);
 });
 
-test("filterPaneSummaries applies active, waiting, busy, and running filters together", () => {
+test("filterPaneSummaries applies agent, active, waiting, busy, and running filters together", () => {
   const panes = [
     createSummary("idle", { pane: createPane({ target: "work:1.0", isActive: true }) }),
     createSummary("waiting-question", { pane: createPane({ target: "work:1.1", paneIndex: 1 }) }),
     createSummary("waiting-input", { pane: createPane({ target: "work:1.2", paneIndex: 2 }) }),
     createSummary("running", { pane: createPane({ target: "work:1.3", paneIndex: 3 }) }),
+    createSummary("running", {
+      pane: createPane({ target: "work:1.4", paneIndex: 4, currentCommand: "codex" }),
+      detection: { agent: "codex", confidence: "medium", reasons: ["command:codex"] },
+    }),
   ];
 
   assert.deepEqual(
@@ -174,7 +178,7 @@ test("filterPaneSummaries applies active, waiting, busy, and running filters tog
   );
   assert.deepEqual(
     filterPaneSummaries(panes, { busy: true }).map((entry) => entry.pane.target),
-    ["work:1.1", "work:1.2", "work:1.3"],
+    ["work:1.1", "work:1.2", "work:1.3", "work:1.4"],
   );
   assert.deepEqual(
     filterPaneSummaries(panes, { waiting: true, busy: true }).map((entry) => entry.pane.target),
@@ -182,6 +186,16 @@ test("filterPaneSummaries applies active, waiting, busy, and running filters tog
   );
   assert.deepEqual(
     filterPaneSummaries(panes, { running: true }).map((entry) => entry.pane.target),
+    ["work:1.3", "work:1.4"],
+  );
+  assert.deepEqual(
+    filterPaneSummaries(panes, { agent: "codex" }).map((entry) => entry.pane.target),
+    ["work:1.4"],
+  );
+  assert.deepEqual(
+    filterPaneSummaries(panes, { agent: "opencode", running: true }).map(
+      (entry) => entry.pane.target,
+    ),
     ["work:1.3"],
   );
 });
@@ -361,6 +375,27 @@ test("CLI install-tmux writes and replaces a marked config block", async () => {
   assert.equal(contents.match(/# >>> opencode-tmux >>>/g)?.length, 1);
 });
 
+test("CLI install-codex writes Codex config and hooks files", async () => {
+  const codexHome = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-home-"));
+  const restoreEnv = setEnv({ CODEX_HOME: codexHome });
+
+  try {
+    const result = await runCommand([BIN_PATH, "install-codex"]);
+    const configPath = join(codexHome, "config.toml");
+    const hooksPath = join(codexHome, "hooks.json");
+    const config = readFileSync(configPath, "utf8");
+    const hooks = readFileSync(hooksPath, "utf8");
+
+    assert.equal(result.exitCode, 0);
+    assert.match(result.stdoutText, /Updated .*config\.toml/);
+    assert.match(result.stdoutText, /Updated .*hooks\.json/);
+    assert.match(config, /codex_hooks = true/);
+    assert.match(hooks, /codex-hook-state/);
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("CLI inspect emits JSON for a discovered pane", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
@@ -414,6 +449,92 @@ exit 1
     assert.equal(payload.summary.runtime.session.directory, "/tmp/project");
     assert.equal(payload.summary.runtime.session.title, "CLI Inspect Session");
     assert.equal(payload.summary.runtime.detail, "plugin state file");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI inspect --debug exposes Codex hook and preview details", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tspinner\tcodex\t/tmp/codex-project\t1\t/dev/ttys001\n'
+  exit 0
+fi
+if [ "$1" = "capture-pane" ]; then
+  printf 'Question 1/1 (1 unanswered)\n'
+  printf 'What would you like to work on next?\n'
+  printf '› 1. Repo change\n'
+  printf '2. Code review\n'
+  printf 'tab to add notes | enter to submit answer | esc to interrupt\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const codexStateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  writeFileSync(
+    join(codexStateDir, "pane.json"),
+    JSON.stringify({
+      version: 1,
+      paneId: "%1",
+      target: "work:1.0",
+      directory: "/tmp/codex-project",
+      title: "codex-project",
+      activity: "busy",
+      status: "running",
+      detail: "Codex is handling a user prompt",
+      updatedAt: 100,
+      sourceEventType: "UserPromptSubmit",
+      sessionId: "codex-session",
+    }),
+    "utf8",
+  );
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    OPENCODE_TMUX_CODEX_STATE_DIR: codexStateDir,
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "inspect", "work:1.0", "--json", "--debug"]);
+    const payload = JSON.parse(result.stdoutText);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(payload.summary.runtime.status, "waiting-question");
+    assert.equal(payload.summary.runtime.source, "codex-preview");
+    assert.equal(payload.debug.codex.busyGraceMs, 3000);
+    assert.equal(payload.debug.codex.matchedState.matchKind, "target");
+    assert.equal(payload.debug.codex.hookRuntime.status, "running");
+    assert.equal(payload.debug.codex.previewRuntime.status, "waiting-question");
+    assert.equal(payload.debug.codex.recentBusyHook, false);
+    assert.equal(payload.debug.codex.preferPreview, true);
+    assert.match(payload.debug.codex.matchedState.filePath, /pane\.json$/);
+    assert.deepEqual(payload.debug.codex.preview.lines.slice(0, 2), [
+      "Question 1/1 (1 unanswered)",
+      "What would you like to work on next?",
+    ]);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI inspect --watch rejects json mode", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tShell\tcodex\t/tmp/codex-project\t1\t/dev/ttys001\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "inspect", "work:1.0", "--watch", "--json"]);
+
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderrText, /Inspect watch mode does not support --json/);
   } finally {
     restoreEnv();
   }
@@ -489,11 +610,21 @@ exit 1
   }
 });
 
+test("CLI codex-hooks-template prints a hooks.json scaffold", async () => {
+  const result = await runCommand([BIN_PATH, "codex-hooks-template"]);
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdoutText, /"SessionStart"/);
+  assert.match(result.stdoutText, /"Stop"/);
+  assert.match(result.stdoutText, /codex-hook-state/);
+});
+
 test("CLI list supports compact and json output with runtime filters", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
   printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
   printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\n'
+  printf 'work\t1\t2\t%%4\tShell\tcodex\t/tmp/codex-project\t0\t/dev/ttys004\n'
   printf 'work\t2\t0\t%%3\tShell\tbash\t/tmp/other\t0\t/dev/ttys003\n'
   exit 0
 fi
@@ -540,6 +671,7 @@ exit 1
       "--provider",
       "plugin",
     ]);
+    const codexResult = await runCommand([BIN_PATH, "list", "--compact", "--agent", "codex"]);
 
     assert.equal(compactResult.exitCode, 0);
     assert.equal(
@@ -551,7 +683,12 @@ exit 1
       JSON.parse(jsonResult.stdoutText).map(
         (entry: { pane: { target: string } }) => entry.pane.target,
       ),
-      ["work:1.1"],
+      ["work:1.1", "work:1.2"],
+    );
+    assert.equal(codexResult.exitCode, 0);
+    assert.equal(
+      codexResult.stdoutText.trim(),
+      "work:1.2\tbusy\trunning\tcodex-command\t0\t(unmatched)\tShell\t/tmp/codex-project",
     );
   } finally {
     restoreEnv();
@@ -635,6 +772,8 @@ test("CLI popup --print-command prints the inner popup-ui command without tmux",
     BIN_PATH,
     "popup",
     "--print-command",
+    "--agent",
+    "codex",
     "--provider",
     "server",
     "--server-map",
@@ -644,6 +783,8 @@ test("CLI popup --print-command prints the inner popup-ui command without tmux",
 
   assert.equal(result.exitCode, 0);
   assert.match(result.stdoutText, /popup-ui/);
+  assert.match(result.stdoutText, /--agent/);
+  assert.match(result.stdoutText, /codex/);
   assert.match(result.stdoutText, /--provider/);
   assert.match(result.stdoutText, /server/);
   assert.match(result.stdoutText, /--server-map/);

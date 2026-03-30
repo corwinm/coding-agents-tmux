@@ -192,6 +192,31 @@ export function renderInspectResult(result: InspectResult): string {
     lines.push("  Session: none");
   }
 
+  if (result.debug?.codex) {
+    lines.push(
+      "",
+      "Debug",
+      `  Codex State Dir: ${result.debug.codex.stateDir}`,
+      `  Busy Grace Ms: ${result.debug.codex.busyGraceMs}`,
+      `  Matched State: ${result.debug.codex.matchedState?.filePath ?? "none"}`,
+      `  Recent Busy Hook: ${formatBoolean(result.debug.codex.recentBusyHook)}`,
+      `  Prefer Preview: ${formatBoolean(result.debug.codex.preferPreview)}`,
+      `  Preview Capture Error: ${result.debug.codex.preview.captureError ?? "none"}`,
+      `  Preview Classification: ${result.debug.codex.preview.classification?.status ?? "none"}`,
+      `  Hook Runtime: ${result.debug.codex.hookRuntime?.status ?? "none"}`,
+      `  Preview Runtime: ${result.debug.codex.previewRuntime?.status ?? "none"}`,
+      `  Candidate States: ${
+        result.debug.codex.candidateStates.length > 0
+          ? result.debug.codex.candidateStates
+              .map((state) => `${state.matchKind}:${state.filePath}`)
+              .join(", ")
+          : "none"
+      }`,
+      "  Preview Lines:",
+      ...result.debug.codex.preview.lines.map((line, index) => `    ${index + 1}: ${line}`),
+    );
+  }
+
   return lines.join("\n");
 }
 

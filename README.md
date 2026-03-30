@@ -59,6 +59,7 @@ Requirements:
 - npm 10+ must be installed
 - TPM will install CLI dependencies automatically on first load with `npm ci --omit=dev`
 - `opencode` sessions must be restarted after first install so the bundled plugin is loaded
+- `codex` sessions must be restarted after first install so newly installed hooks are loaded
 
 ## What TPM Sets Up
 
@@ -80,10 +81,23 @@ On first install, the tmux plugin also bootstraps the CLI runtime dependencies i
 ~/.tmux/plugins/opencode-tmux/node_modules
 ```
 
+It also installs or updates Codex hook integration under:
+
+```text
+~/.codex/config.toml
+~/.codex/hooks.json
+```
+
 You can disable the automatic symlink step with:
 
 ```tmux
 set -g @opencode-tmux-install-opencode-plugin 'off'
+```
+
+You can disable the automatic Codex hook setup with:
+
+```tmux
+set -g @opencode-tmux-install-codex-hooks 'off'
 ```
 
 ## Usage
@@ -210,6 +224,7 @@ Available tmux options:
 - `@opencode-tmux-waiting-menu-key` waiting-only menu chooser key, default `W`
 - `@opencode-tmux-waiting-popup-key` waiting-only popup chooser key, default `C-w`
 - `@opencode-tmux-install-opencode-plugin` `on` or `off`, default `on`
+- `@opencode-tmux-install-codex-hooks` `on` or `off`, default `on`
 - `@opencode-tmux-provider` `auto`, `plugin`, `sqlite`, or `server`, default `plugin`
 - `@opencode-tmux-server-map` JSON object or JSON file path for explicit server endpoints
 - `@opencode-tmux-popup-filter` one of `all`, `busy`, `waiting`, `running`, `active`
@@ -251,10 +266,31 @@ set -g @opencode-tmux-provider 'plugin'
 
 `codex` panes are detected from the live tmux pane command, so they now show up in `list`, `switch`, `popup`, and `status` alongside `opencode` panes.
 
-Current Codex runtime support is intentionally coarse:
+Use `--agent opencode`, `--agent codex`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
+
+Default Codex runtime support is intentionally coarse:
 
 - if a tmux pane is running a `codex` process, it is classified as `running`
 - waiting, question, and idle distinctions are still `opencode`-specific until a stronger Codex-local state source is added
+
+To enable higher-fidelity Codex state with Codex hooks:
+
+1. Let the tmux plugin install the global Codex config automatically, or run it manually:
+
+```bash
+./bin/opencode-tmux install-codex
+```
+
+2. Optionally generate an additional repo-local hooks file:
+
+```bash
+mkdir -p .codex
+./bin/opencode-tmux codex-hooks-template > .codex/hooks.json
+```
+
+3. Restart `codex` sessions in tmux so they begin publishing hook-backed state.
+
+With hooks enabled, `opencode-tmux` can mark Codex panes as `idle` or `waiting-input` between turns instead of showing every Codex pane as continuously `running`.
 
 ## Troubleshooting
 
@@ -262,6 +298,7 @@ Current Codex runtime support is intentionally coarse:
 - first TPM load feels slow: the plugin may be running `npm ci --omit=dev` to bootstrap dependencies
 - new panes show stale state: restart the `opencode` session so it reloads the plugin
 - waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/opencode-tmux.ts`
+- Codex still always looks busy: confirm `~/.codex/config.toml` has `codex_hooks = true`, `~/.codex/hooks.json` exists, and restart the Codex session
 - status looks stale with `sqlite` or `server`: set `@opencode-tmux-status-interval` to a positive value because event-driven refreshes are centered on the bundled plugin provider
 - TPM install changed but tmux still looks old: run `prefix + I` or `tmux source-file ~/.tmux.conf`
 
@@ -289,6 +326,7 @@ Useful commands:
 
 ```bash
 ./bin/opencode-tmux list --provider plugin
+./bin/opencode-tmux list --agent codex
 ./bin/opencode-tmux list --provider plugin --waiting
 ./bin/opencode-tmux inspect <target> --provider plugin
 ./bin/opencode-tmux status --provider plugin --style tmux

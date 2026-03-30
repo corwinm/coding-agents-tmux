@@ -2,8 +2,17 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import {
+  getCodexStateDir,
+  readCodexStateEntries,
+  type CodexStateEntry,
+  type CodexStateFile,
+} from "./codex.ts";
+import { capturePanePreview } from "./tmux.ts";
 import type {
+  CodexRuntimeDebug,
   DiscoveredPane,
+  InspectDebugInfo,
   PaneRuntimeSummary,
   RuntimeInfo,
   RuntimeProviderName,
@@ -91,7 +100,18 @@ interface PluginStateIndex {
   states: PluginStateFile[];
 }
 
+interface CodexStateIndex {
+  entryByState: Map<CodexStateFile, CodexStateEntry>;
+  exactPaneIdMatches: Map<string, CodexStateFile>;
+  exactTargetMatches: Map<string, CodexStateFile>;
+  statesByDirectory: Map<string, CodexStateFile[]>;
+}
+
 function getStateUpdatedAt(state: PluginStateFile): number {
+  return state.updatedAt ?? 0;
+}
+
+function getCodexStateUpdatedAt(state: CodexStateFile): number {
   return state.updatedAt ?? 0;
 }
 
@@ -100,6 +120,17 @@ function pickNewerState(
   candidate: PluginStateFile,
 ): PluginStateFile {
   if (!current || getStateUpdatedAt(candidate) > getStateUpdatedAt(current)) {
+    return candidate;
+  }
+
+  return current;
+}
+
+function pickNewerCodexState(
+  current: CodexStateFile | undefined,
+  candidate: CodexStateFile,
+): CodexStateFile {
+  if (!current || getCodexStateUpdatedAt(candidate) > getCodexStateUpdatedAt(current)) {
     return candidate;
   }
 
@@ -1000,20 +1031,394 @@ function normalizeProvider(provider: RuntimeProviderName | undefined): RuntimePr
   return value;
 }
 
-function attachRuntimeWithCodex(panes: DiscoveredPane[]): PaneRuntimeSummary[] {
-  return panes.map((entry) => ({
-    ...entry,
-    runtime: createRuntimeInfo({
+function toCodexSessionMatch(state: CodexStateFile): SessionMatch | null {
+  if (!state.directory || !state.title) {
+    return null;
+  }
+
+  return {
+    id: state.sessionId ?? `codex:${state.directory}`,
+    directory: state.directory,
+    title: state.title,
+    timeUpdated: state.updatedAt ?? Date.now(),
+  };
+}
+
+function buildCodexStateIndex(entries = readCodexStateEntries()): CodexStateIndex {
+  const entryByState = new Map<CodexStateFile, CodexStateEntry>();
+  const exactPaneIdMatches = new Map<string, CodexStateFile>();
+  const exactTargetMatches = new Map<string, CodexStateFile>();
+  const statesByDirectory = new Map<string, CodexStateFile[]>();
+
+  for (const entry of entries) {
+    const { state } = entry;
+    const directory = state.directory;
+
+    if (!directory) {
+      continue;
+    }
+
+    entryByState.set(state, entry);
+
+    const directoryStates = statesByDirectory.get(directory) ?? [];
+    directoryStates.push(state);
+    statesByDirectory.set(directory, directoryStates);
+
+    if (state.paneId) {
+      exactPaneIdMatches.set(
+        state.paneId,
+        pickNewerCodexState(exactPaneIdMatches.get(state.paneId), state),
+      );
+    }
+
+    if (state.target) {
+      exactTargetMatches.set(
+        state.target,
+        pickNewerCodexState(exactTargetMatches.get(state.target), state),
+      );
+    }
+  }
+
+  return {
+    entryByState,
+    exactPaneIdMatches,
+    exactTargetMatches,
+    statesByDirectory,
+  };
+}
+
+function getExactCodexState(index: CodexStateIndex, pane: TmuxPane): CodexStateFile | null {
+  const targetState = index.exactTargetMatches.get(pane.target);
+
+  if (targetState) {
+    return targetState;
+  }
+
+  const paneIdState = index.exactPaneIdMatches.get(pane.paneId);
+
+  if (paneIdState) {
+    return paneIdState;
+  }
+
+  const states = (index.statesByDirectory.get(pane.currentPath) ?? []).filter(
+    (state) => !state.paneId && !state.target,
+  );
+
+  if (states.length === 1) {
+    return states[0] ?? null;
+  }
+
+  if (states.length > 1) {
+    return states.reduce<CodexStateFile | null>((latest, state) => {
+      if (!latest || getCodexStateUpdatedAt(state) > getCodexStateUpdatedAt(latest)) {
+        return state;
+      }
+
+      return latest;
+    }, null);
+  }
+
+  return null;
+}
+
+function classifyCodexPreview(
+  lines: string[],
+): Pick<RuntimeInfo, "activity" | "detail" | "status"> | null {
+  const nonEmptyLines = lines.map((line) => line.trim()).filter(Boolean);
+  const optionIndices = nonEmptyLines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => /^\d+\.\s+\S/.test(line) || /^›\s+\d+\./.test(line))
+    .map(({ index }) => index);
+  const latestPromptIndex = nonEmptyLines.reduce((latest, line, index) => {
+    if (
+      (line.startsWith("› ") && !/^›\s+\d+\./.test(line)) ||
+      (line.startsWith("> ") && !/^>\s+\d+\./.test(line))
+    ) {
+      return index;
+    }
+
+    return latest;
+  }, -1);
+  const latestQuestionIndex = nonEmptyLines.reduce((latest, line, index) => {
+    if (
+      /^Question\s+\d+\/\d+/.test(line) ||
+      line.includes("enter to submit answer") ||
+      line.includes("tab to add notes") ||
+      (/would you like|do you want|choose|select|what would you like/i.test(line) &&
+        optionIndices.length >= 2)
+    ) {
+      return index;
+    }
+
+    return latest;
+  }, -1);
+  const latestTrustIndex = nonEmptyLines.reduce((latest, line, index) => {
+    if (
+      line.includes("Do you trust the contents of this directory?") ||
+      line.includes("Press enter to continue")
+    ) {
+      return index;
+    }
+
+    return latest;
+  }, -1);
+  const latestModelIndex = nonEmptyLines.reduce((latest, line, index) => {
+    return line.startsWith("model:") ? index : latest;
+  }, -1);
+
+  if (latestQuestionIndex >= 0 && latestQuestionIndex > latestPromptIndex) {
+    return {
       activity: "busy",
-      status: "running",
-      source: "codex-command",
+      detail:
+        optionIndices.length >= 2
+          ? "Codex is waiting for a multiple-choice response"
+          : "Codex is waiting for user input",
+      status: optionIndices.length >= 2 ? "waiting-question" : "waiting-input",
+    };
+  }
+
+  if (latestPromptIndex >= 0 && latestPromptIndex > latestTrustIndex) {
+    return {
+      activity: "idle",
+      detail: "Codex is ready for a new prompt",
+      status: "new",
+    };
+  }
+
+  if (latestTrustIndex >= 0) {
+    return {
+      activity: "idle",
+      detail: "Codex startup trust prompt is waiting for confirmation",
+      status: "new",
+    };
+  }
+
+  if (latestModelIndex >= 0) {
+    return {
+      activity: "idle",
+      detail: "Codex is open and waiting for input",
+      status: "idle",
+    };
+  }
+
+  return null;
+}
+
+function getCodexBusyGraceMs(): number {
+  const value = process.env.OPENCODE_TMUX_CODEX_BUSY_GRACE_MS;
+
+  if (!value) {
+    return 3000;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 3000;
+}
+
+function isRecentCodexBusyHookState(state: CodexStateFile | null, now = Date.now()): boolean {
+  if (!state?.updatedAt) {
+    return false;
+  }
+
+  if (!["UserPromptSubmit", "PreToolUse", "PostToolUse"].includes(state.sourceEventType ?? "")) {
+    return false;
+  }
+
+  return now - state.updatedAt <= getCodexBusyGraceMs();
+}
+
+function shouldPreferCodexPreview(
+  hookRuntime: RuntimeInfo,
+  preview: RuntimeInfo | null,
+  state: CodexStateFile | null,
+): boolean {
+  if (!preview) {
+    return false;
+  }
+
+  if (preview.status === "waiting-question" || preview.status === "waiting-input") {
+    return true;
+  }
+
+  if (
+    (preview.status === "new" || preview.status === "idle") &&
+    ["running", "waiting-question", "waiting-input"].includes(hookRuntime.status)
+  ) {
+    if (hookRuntime.status === "running" && isRecentCodexBusyHookState(state)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  return false;
+}
+
+function createCodexPreviewRuntime(
+  preview: Pick<RuntimeInfo, "activity" | "detail" | "status">,
+): RuntimeInfo {
+  return createRuntimeInfo({
+    activity: preview.activity,
+    status: preview.status,
+    source: "codex-preview",
+    strategy: "exact",
+    provider: "codex",
+    heuristic: true,
+    session: null,
+    detail: preview.detail,
+  });
+}
+
+async function loadCodexPreviewDebug(target: TmuxPane["target"]): Promise<{
+  captureError: string | null;
+  classification: Pick<RuntimeInfo, "activity" | "detail" | "status"> | null;
+  lines: string[];
+}> {
+  try {
+    const lines = await capturePanePreview(target, 24);
+    return {
+      lines,
+      classification: classifyCodexPreview(lines),
+      captureError: null,
+    };
+  } catch (error) {
+    return {
+      lines: [],
+      classification: null,
+      captureError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function buildCodexStateDebugMatch(
+  entry: CodexStateEntry,
+  pane: TmuxPane,
+): {
+  filePath: string;
+  matchKind: "target" | "pane-id" | "directory";
+  state: CodexStateEntry["state"];
+} {
+  const matchKind =
+    entry.state.target === pane.target
+      ? "target"
+      : entry.state.paneId === pane.paneId
+        ? "pane-id"
+        : "directory";
+
+  return {
+    filePath: entry.filePath,
+    matchKind,
+    state: entry.state,
+  };
+}
+
+export async function buildInspectDebugInfo(pane: DiscoveredPane): Promise<InspectDebugInfo> {
+  if (pane.detection.agent !== "codex") {
+    return { codex: null };
+  }
+
+  const entries = readCodexStateEntries();
+  const index = buildCodexStateIndex(entries);
+  const matchedState = getExactCodexState(index, pane.pane);
+  const matchedEntry = matchedState ? (index.entryByState.get(matchedState) ?? null) : null;
+  const preview = await loadCodexPreviewDebug(pane.pane.target);
+  const previewRuntime = preview.classification
+    ? createCodexPreviewRuntime(preview.classification)
+    : null;
+  const hookRuntime = matchedState?.directory
+    ? createRuntimeInfo({
+        activity: matchedState.activity ?? "unknown",
+        status: matchedState.status ?? "unknown",
+        source: "codex-hook",
+        strategy: "exact",
+        provider: "codex",
+        heuristic: false,
+        session: toCodexSessionMatch(matchedState),
+        detail: matchedState.detail ?? "Codex hook state file",
+      })
+    : null;
+  const candidateEntries = entries.filter((entry) => {
+    return (
+      entry.state.target === pane.pane.target ||
+      entry.state.paneId === pane.pane.paneId ||
+      (entry.state.directory === pane.pane.currentPath &&
+        !entry.state.target &&
+        !entry.state.paneId)
+    );
+  });
+  const busyGraceMs = getCodexBusyGraceMs();
+  const recentBusyHook = isRecentCodexBusyHookState(matchedState);
+
+  const codex: CodexRuntimeDebug = {
+    stateDir: getCodexStateDir(),
+    busyGraceMs,
+    matchedState: matchedEntry ? buildCodexStateDebugMatch(matchedEntry, pane.pane) : null,
+    candidateStates: candidateEntries.map((entry) => buildCodexStateDebugMatch(entry, pane.pane)),
+    hookRuntime,
+    previewRuntime,
+    recentBusyHook,
+    preferPreview: hookRuntime
+      ? shouldPreferCodexPreview(hookRuntime, previewRuntime, matchedState)
+      : false,
+    preview,
+  };
+
+  return { codex };
+}
+
+async function classifyCodexPaneRuntime(
+  state: CodexStateFile | null,
+  pane: TmuxPane,
+): Promise<RuntimeInfo> {
+  const preview = await loadCodexPreviewDebug(pane.target);
+  const previewRuntime = preview.classification
+    ? createCodexPreviewRuntime(preview.classification)
+    : null;
+
+  if (state?.directory) {
+    const hookRuntime = createRuntimeInfo({
+      activity: state.activity ?? "unknown",
+      status: state.status ?? "unknown",
+      source: "codex-hook",
       strategy: "exact",
       provider: "codex",
       heuristic: false,
-      session: null,
-      detail: `detected ${entry.pane.currentCommand} process in tmux pane`,
-    }),
-  }));
+      session: toCodexSessionMatch(state),
+      detail: state.detail ?? "Codex hook state file",
+    });
+
+    if (shouldPreferCodexPreview(hookRuntime, previewRuntime, state) && previewRuntime) {
+      return previewRuntime;
+    }
+
+    return hookRuntime;
+  }
+
+  if (previewRuntime) {
+    return previewRuntime;
+  }
+
+  return createRuntimeInfo({
+    activity: "busy",
+    status: "running",
+    source: "codex-command",
+    strategy: "exact",
+    provider: "codex",
+    heuristic: false,
+    session: null,
+    detail: `detected ${pane.currentCommand} process in tmux pane`,
+  });
+}
+
+async function attachRuntimeWithCodex(panes: DiscoveredPane[]): Promise<PaneRuntimeSummary[]> {
+  const index = buildCodexStateIndex();
+
+  return Promise.all(
+    panes.map(async (entry) => ({
+      ...entry,
+      runtime: await classifyCodexPaneRuntime(getExactCodexState(index, entry.pane), entry.pane),
+    })),
+  );
 }
 
 async function attachRuntimeWithOpencodeProvider(
@@ -1074,7 +1479,7 @@ export async function attachRuntimeToPanes(
 
   const [opencodeResults, codexResults] = await Promise.all([
     attachRuntimeWithOpencodeProvider(opencodePanes, options),
-    Promise.resolve(attachRuntimeWithCodex(codexPanes)),
+    attachRuntimeWithCodex(codexPanes),
   ]);
   const resultsByTarget = new Map(
     [...opencodeResults, ...codexResults].map((entry) => [entry.pane.target, entry]),
@@ -1106,6 +1511,11 @@ export function getRuntimeProviderHelpText(): string {
     "Plugin state:",
     `  Default path: ${getPluginStateDir()}`,
     "  Override with OPENCODE_TMUX_STATE_DIR.",
+    "",
+    "Codex hook state:",
+    `  Default path: ${getCodexStateDir()}`,
+    "  Override with OPENCODE_TMUX_CODEX_STATE_DIR.",
+    "  Generate hooks.json with: opencode-tmux codex-hooks-template",
     "",
     "Server map:",
     "  Pass --server-map with a JSON object or a path to a JSON file.",

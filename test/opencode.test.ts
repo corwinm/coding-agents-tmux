@@ -494,6 +494,7 @@ test("runtime provider helpers expose provider docs, template output, and valida
   });
   assert.match(helpText, /Runtime providers:/);
   assert.match(helpText, /plugin  Use opencode plugin state files only/);
+  assert.match(helpText, /Codex hook state:/);
   await assert.rejects(
     attachRuntimeToPanes([createDiscoveredPane()], { provider: "bogus" as never }),
     /invalid runtime provider: bogus/,

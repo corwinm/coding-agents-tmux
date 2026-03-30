@@ -45,6 +45,8 @@ export interface SessionMatch {
 }
 
 export type RuntimeSource =
+  | "codex-hook"
+  | "codex-preview"
   | "plugin-exact"
   | "plugin-descendant"
   | "server-explicit"
@@ -80,13 +82,55 @@ export interface PaneRuntimeSummary extends DiscoveredPane {
   runtime: RuntimeInfo;
 }
 
+export interface CodexStateDebugMatch {
+  filePath: string;
+  matchKind: "target" | "pane-id" | "directory";
+  state: {
+    activity?: RuntimeActivity;
+    detail?: string;
+    directory?: string;
+    paneId?: string | null;
+    sessionId?: string;
+    sourceEventType?: string;
+    status?: RuntimeStatus;
+    target?: string | null;
+    title?: string;
+    updatedAt?: number;
+    version?: number;
+  };
+}
+
+export interface CodexPreviewDebug {
+  lines: string[];
+  captureError: string | null;
+  classification: Pick<RuntimeInfo, "activity" | "detail" | "status"> | null;
+}
+
+export interface CodexRuntimeDebug {
+  stateDir: string;
+  busyGraceMs: number;
+  matchedState: CodexStateDebugMatch | null;
+  candidateStates: CodexStateDebugMatch[];
+  hookRuntime: RuntimeInfo | null;
+  previewRuntime: RuntimeInfo | null;
+  recentBusyHook: boolean;
+  preferPreview: boolean;
+  preview: CodexPreviewDebug;
+}
+
+export interface InspectDebugInfo {
+  codex: CodexRuntimeDebug | null;
+}
+
 export interface InspectResult {
   target: PaneTarget;
   summary: PaneRuntimeSummary;
+  debug?: InspectDebugInfo;
 }
 
 export interface PaneFilterOptions {
   active?: boolean;
+  agent?: AgentKind | "all";
   busy?: boolean;
   waiting?: boolean;
   running?: boolean;
