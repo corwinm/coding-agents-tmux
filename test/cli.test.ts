@@ -247,6 +247,7 @@ test("buildTmuxSnippet includes provider, server map, popup filter, and refresh 
   assert.match(snippet, /'--server-map' '\/tmp\/server-map\.json'/);
   assert.match(snippet, /--waiting/);
   assert.match(snippet, /set-hook -g client-attached\[200\]/);
+  assert.match(snippet, /run-shell -b/);
   assert.match(snippet, /set -g status-right/);
 });
 
@@ -572,6 +573,55 @@ exit 0
     assert.match(
       readFileSync(fakeTmux.logPath, "utf8"),
       /switch-client -t work ; select-window -t work:4 ; select-pane -t work:4\.2/,
+    );
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI switch falls back to attach-session when tmux has no current client", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t4\t2\t%%4\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys004\n'
+  exit 0
+fi
+printf '%s\n' "$*" >> '__LOG_PATH__'
+if [ "$1" = "switch-client" ]; then
+  printf 'no current client\n' >&2
+  exit 1
+fi
+if [ "$1" = "attach-session" ]; then
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const pluginStateDir = createPluginStateDir([
+    {
+      target: "work:4.2",
+      directory: "/tmp/project",
+      title: "CLI Switch Session",
+      status: "running",
+      activity: "busy",
+      updatedAt: 100,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    TMUX: "1",
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "switch", "work:4.2", "--provider", "plugin"]);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(result.stderrText.trim(), "");
+    const log = readFileSync(fakeTmux.logPath, "utf8");
+    assert.match(log, /switch-client -t work ; select-window -t work:4 ; select-pane -t work:4\.2/);
+    assert.match(
+      log,
+      /attach-session -t work ; select-window -t work:4 ; select-pane -t work:4\.2/,
     );
   } finally {
     restoreEnv();

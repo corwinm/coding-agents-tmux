@@ -164,6 +164,7 @@ const STATUS_REFRESH_HOOKS = [
   "window-linked",
   "window-unlinked",
 ] as const;
+const STATUS_REFRESH_HOOK_COMMAND = "run-shell -b 'tmux refresh-client -S >/dev/null 2>&1 || true'";
 
 async function loadPaneRuntimeSummaries(options: RuntimeProviderOptions = {}) {
   const panes = await discoverAgentPanes();
@@ -712,7 +713,8 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
   const waitingMenuCommand = buildMenuScriptCommand(waitingArgs);
   const statusCommand = buildShellRunCommand(statusArgs);
   const statusRefreshHookLines = STATUS_REFRESH_HOOKS.map(
-    (hook, index) => `set-hook -g ${hook}[${200 + index}] ${tmuxDoubleQuote("refresh-client -S")}`,
+    (hook, index) =>
+      `set-hook -g ${hook}[${200 + index}] ${tmuxDoubleQuote(STATUS_REFRESH_HOOK_COMMAND)}`,
   );
   const menuKey = options.menuKey ?? "O";
   const popupKey = options.popupKey ?? "P";

@@ -306,6 +306,38 @@ exit 1
   }
 });
 
+test("switchToPane falls back to attach-session when tmux has no current client", async () => {
+  const fakeTmux = installFakeTmux(`
+printf '%s\n' "$*" >> '__LOG_PATH__'
+if [ "$1" = "switch-client" ]; then
+  printf 'no current client\n' >&2
+  exit 1
+fi
+if [ "$1" = "attach-session" ]; then
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    TMUX: "1",
+  });
+
+  try {
+    await switchToPane(createPane({ target: "work:4.2", windowIndex: 4, paneIndex: 2 }));
+
+    const log = readFileSync(fakeTmux.logPath, "utf8");
+    assert.match(log, /switch-client -t work ; select-window -t work:4 ; select-pane -t work:4\.2/);
+    assert.match(
+      log,
+      /attach-session -t work ; select-window -t work:4 ; select-pane -t work:4\.2/,
+    );
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("tmux helpers surface subprocess failures with stderr context", async () => {
   const fakeTmux = installFakeTmux(`
 printf 'tmux failed: %s\n' "$1" >&2

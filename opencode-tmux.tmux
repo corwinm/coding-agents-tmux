@@ -413,7 +413,7 @@ main() {
   status_text_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_SHOW_PREFIX='off' '$CURRENT_DIR/bin/opencode-tmux' status --style 'plain' --provider '$provider'"
   status_inline_command="cd '$CURRENT_DIR' && OPENCODE_TMUX_STATUS_PREFIX='$status_prefix' OPENCODE_TMUX_STATUS_SHOW_PREFIX='off' OPENCODE_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' OPENCODE_TMUX_STATUS_COLOR_BUSY='$status_color_busy' OPENCODE_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' OPENCODE_TMUX_STATUS_COLOR_IDLE='$status_color_idle' OPENCODE_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/opencode-tmux' status --style 'tmux' --provider '$provider'"
   status_tone_command="cd '$CURRENT_DIR' && '$CURRENT_DIR/bin/opencode-tmux' status --tone --provider '$provider'"
-  status_refresh_command="refresh-client -S"
+  status_refresh_command="run-shell -b 'tmux refresh-client -S >/dev/null 2>&1 || true'"
   bind_command="'$menu_script' --provider '$provider'"
   waiting_bind_command="'$menu_script' --provider '$provider' --waiting"
 

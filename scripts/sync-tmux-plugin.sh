@@ -34,6 +34,8 @@ run_bootstrap() {
 }
 
 reload_tmux() {
+  local plugin_entrypoint="$TARGET_DIR/opencode-tmux.tmux"
+
   if ! command -v tmux >/dev/null 2>&1; then
     printf 'opencode-tmux: tmux is not installed; skipping reload\n'
     return
@@ -50,6 +52,11 @@ reload_tmux() {
   fi
 
   tmux source-file "$TMUX_CONF"
+
+  if [ -f "$plugin_entrypoint" ]; then
+    tmux run-shell "$plugin_entrypoint"
+  fi
+
   printf 'Reloaded tmux from %s\n' "$TMUX_CONF"
 }
 

@@ -40,6 +40,10 @@ const TMUX_FIELDS = [
 
 const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, "g");
 
+function isNoCurrentClientMessage(message: string): boolean {
+  return /no current client/i.test(message);
+}
+
 function formatConfidence(reasons: string[]): DetectionConfidence {
   if (
     reasons.some((reason) => reason.startsWith("title:")) ||
@@ -402,12 +406,21 @@ export function buildSwitchToPaneCommand(pane: TmuxPane, insideTmux: boolean): s
 }
 
 export async function switchToPane(pane: TmuxPane): Promise<void> {
-  const command = buildSwitchToPaneCommand(pane, Boolean(process.env.TMUX));
+  const insideTmux = Boolean(process.env.TMUX);
+  let result = await runCommand(buildSwitchToPaneCommand(pane, insideTmux));
 
-  const { stderrText, exitCode } = await runCommand(command);
-
-  if (exitCode !== 0) {
-    const message = stderrText.trim() || `failed to switch to ${pane.target}`;
-    throw new Error(message);
+  if (result.exitCode === 0) {
+    return;
   }
+
+  if (insideTmux && isNoCurrentClientMessage(result.stderrText)) {
+    result = await runCommand(buildSwitchToPaneCommand(pane, false));
+
+    if (result.exitCode === 0) {
+      return;
+    }
+  }
+
+  const message = result.stderrText.trim() || `failed to switch to ${pane.target}`;
+  throw new Error(message);
 }
