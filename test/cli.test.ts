@@ -166,6 +166,14 @@ test("filterPaneSummaries applies agent, active, waiting, busy, and running filt
       pane: createPane({ target: "work:1.4", paneIndex: 4, currentCommand: "codex" }),
       detection: { agent: "codex", confidence: "medium", reasons: ["command:codex"] },
     }),
+    createSummary("unknown", {
+      pane: createPane({ target: "work:1.5", paneIndex: 5, currentCommand: "pi" }),
+      detection: { agent: "pi", confidence: "medium", reasons: ["command:pi"] },
+      runtime: createRuntime("unknown", {
+        source: "pi-command",
+        match: { strategy: "exact", provider: "pi", heuristic: false },
+      }),
+    }),
   ];
 
   assert.deepEqual(
@@ -197,6 +205,10 @@ test("filterPaneSummaries applies agent, active, waiting, busy, and running filt
       (entry) => entry.pane.target,
     ),
     ["work:1.3"],
+  );
+  assert.deepEqual(
+    filterPaneSummaries(panes, { agent: "pi" }).map((entry) => entry.pane.target),
+    ["work:1.5"],
   );
 });
 
@@ -675,6 +687,7 @@ if [ "$1" = "list-panes" ]; then
   printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
   printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\n'
   printf 'work\t1\t2\t%%4\tShell\tcodex\t/tmp/codex-project\t0\t/dev/ttys004\n'
+  printf 'work\t1\t5\t%%5\tπ - pi-project\tpi\t/tmp/pi-project\t0\t/dev/ttys005\n'
   printf 'work\t2\t0\t%%3\tShell\tbash\t/tmp/other\t0\t/dev/ttys003\n'
   exit 0
 fi
@@ -722,6 +735,7 @@ exit 1
       "plugin",
     ]);
     const codexResult = await runCommand([BIN_PATH, "list", "--compact", "--agent", "codex"]);
+    const piResult = await runCommand([BIN_PATH, "list", "--compact", "--agent", "pi"]);
 
     assert.equal(compactResult.exitCode, 0);
     assert.equal(
@@ -733,12 +747,17 @@ exit 1
       JSON.parse(jsonResult.stdoutText).map(
         (entry: { pane: { target: string } }) => entry.pane.target,
       ),
-      ["work:1.1", "work:1.2"],
+      ["work:1.1", "work:1.2", "work:1.5"],
     );
     assert.equal(codexResult.exitCode, 0);
     assert.equal(
       codexResult.stdoutText.trim(),
       "work:1.2\tbusy\trunning\tcodex-command\t0\t(unmatched)\tShell\t/tmp/codex-project",
+    );
+    assert.equal(piResult.exitCode, 0);
+    assert.equal(
+      piResult.stdoutText.trim(),
+      "work:1.5\tbusy\trunning\tpi-command\t0\t(unmatched)\tπ - pi-project\t/tmp/pi-project",
     );
   } finally {
     restoreEnv();

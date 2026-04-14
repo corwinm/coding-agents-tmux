@@ -93,6 +93,7 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
   const command = pane.currentCommand.toLowerCase();
   const opencodeReasons: string[] = [];
   const codexReasons: string[] = [];
+  const piReasons: string[] = [];
   const candidates: Array<{ agent: AgentKind; reasons: string[]; score: number }> = [];
 
   if (title === "OpenCode") {
@@ -119,6 +120,14 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
     codexReasons.push("command:codex");
   }
 
+  if (lowerTitle === "pi" || lowerTitle.startsWith("pi - ") || title.startsWith("π - ")) {
+    piReasons.push("title:Pi");
+  }
+
+  if (matchesCommand(command, "pi")) {
+    piReasons.push("command:pi");
+  }
+
   if (opencodeReasons.some((reason) => !reason.startsWith("path:"))) {
     candidates.push({
       agent: "opencode",
@@ -135,6 +144,14 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
       agent: "codex",
       reasons: codexReasons,
       score: codexReasons.includes("command:codex") ? 5 : 4,
+    });
+  }
+
+  if (piReasons.length > 0) {
+    candidates.push({
+      agent: "pi",
+      reasons: piReasons,
+      score: piReasons.includes("command:pi") ? 5 : 4,
     });
   }
 

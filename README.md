@@ -9,7 +9,7 @@ Install it with TPM to:
 - show the current pane state plus background session summary in the status line
 - use plugin-backed runtime state instead of relying only on sqlite heuristics
 
-Today the strongest runtime support is still for `opencode`, and the repo now also detects `codex` panes for discovery, switching, popup navigation, and status summaries.
+Today the strongest runtime support is still for `opencode`, and the repo now also detects `codex` and `pi` panes for discovery, switching, popup navigation, and status summaries.
 
 ## Install
 
@@ -60,6 +60,7 @@ Requirements:
 - TPM will install CLI dependencies automatically on first load with `npm ci --omit=dev`
 - `opencode` sessions must be restarted after first install so the bundled plugin is loaded
 - `codex` sessions must be restarted after first install so newly installed hooks are loaded
+- `pi` sessions must be restarted after first install so the bundled extension is loaded
 
 ## What TPM Sets Up
 
@@ -81,6 +82,18 @@ On first install, the tmux plugin also bootstraps the CLI runtime dependencies i
 ~/.tmux/plugins/opencode-tmux/node_modules
 ```
 
+It also installs or updates the bundled Pi extension under:
+
+```text
+~/.pi/agent/extensions/opencode-tmux/index.ts
+```
+
+That extension publishes normalized Pi state files under:
+
+```text
+~/.local/state/opencode-tmux/pi-state
+```
+
 It also installs or updates Codex hook integration under:
 
 ```text
@@ -92,6 +105,12 @@ You can disable the automatic symlink step with:
 
 ```tmux
 set -g @opencode-tmux-install-opencode-plugin 'off'
+```
+
+You can disable the automatic Pi extension setup with:
+
+```tmux
+set -g @opencode-tmux-install-pi-extension 'off'
 ```
 
 You can disable the automatic Codex hook setup with:
@@ -224,13 +243,14 @@ Available tmux options:
 - `@opencode-tmux-waiting-menu-key` waiting-only menu chooser key, default `W`
 - `@opencode-tmux-waiting-popup-key` waiting-only popup chooser key, default `C-w`
 - `@opencode-tmux-install-opencode-plugin` `on` or `off`, default `on`
+- `@opencode-tmux-install-pi-extension` `on` or `off`, default `on`
 - `@opencode-tmux-install-codex-hooks` `on` or `off`, default `on`
 - `@opencode-tmux-provider` `auto`, `plugin`, `sqlite`, or `server`, default `plugin`
 - `@opencode-tmux-server-map` JSON object or JSON file path for explicit server endpoints
 - `@opencode-tmux-popup-filter` one of `all`, `busy`, `waiting`, `running`, `active`
 - `@opencode-tmux-popup-width` popup width, default `100%`
 - `@opencode-tmux-popup-height` popup height, default `100%`
-- `@opencode-tmux-popup-title` popup title, default `OpenCode Sessions`
+- `@opencode-tmux-popup-title` popup title, default `Coding Agent Sessions`
 - `@opencode-tmux-status` `on` or `off`, default `on`
 - `@opencode-tmux-status-style` `plain` or `tmux`, default `tmux`
 - `@opencode-tmux-status-mode` `append` or `manual`, default `manual`
@@ -262,11 +282,38 @@ Example:
 set -g @opencode-tmux-provider 'plugin'
 ```
 
+## Pi
+
+`pi` panes are detected from the live tmux pane command and common title patterns, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode` and `codex` panes.
+
+Use `--agent opencode`, `--agent codex`, `--agent pi`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
+
+For the best Pi runtime fidelity, let the tmux plugin install the bundled Pi extension automatically. It is linked into:
+
+```text
+~/.pi/agent/extensions/opencode-tmux/index.ts
+```
+
+That extension publishes pane-aware Pi state under:
+
+```text
+~/.local/state/opencode-tmux/pi-state
+```
+
+Pi runtime support is intentionally minimal and extensible:
+
+- with the bundled Pi extension loaded, Pi panes can report `new`, `running`, `idle`, and best-effort `waiting-input`
+- without the extension, `opencode-tmux` falls back to pane preview heuristics when possible
+- if preview is inconclusive, Pi falls back to a coarse `running` state when a `pi` process is still detected in the tmux pane
+- Pi has no built-in permission or plan mode integration here yet, so those states are not modeled specially
+
+After first install or update, restart Pi sessions in tmux so they load the bundled extension.
+
 ## Codex
 
 `codex` panes are detected from the live tmux pane command, so they now show up in `list`, `switch`, `popup`, and `status` alongside `opencode` panes.
 
-Use `--agent opencode`, `--agent codex`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
+Use `--agent opencode`, `--agent codex`, `--agent pi`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
 
 Default Codex runtime support is intentionally coarse:
 
@@ -298,6 +345,7 @@ With hooks enabled, `opencode-tmux` can mark Codex panes as `idle` or `waiting-i
 - first TPM load feels slow: the plugin may be running `npm ci --omit=dev` to bootstrap dependencies
 - new panes show stale state: restart the `opencode` session so it reloads the plugin
 - waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/opencode-tmux.ts`
+- Pi still looks busy or unknown: confirm the bundled extension exists at `~/.pi/agent/extensions/opencode-tmux/index.ts` and restart the Pi session so it loads the extension
 - Codex still always looks busy: confirm `~/.codex/config.toml` has `codex_hooks = true`, `~/.codex/hooks.json` exists, and restart the Codex session
 - status looks stale with `sqlite` or `server`: set `@opencode-tmux-status-interval` to a positive value because event-driven refreshes are centered on the bundled plugin provider
 - TPM install changed but tmux still looks old: run `prefix + I` or `tmux source-file ~/.tmux.conf`
@@ -327,6 +375,7 @@ Useful commands:
 ```bash
 ./bin/opencode-tmux list --provider plugin
 ./bin/opencode-tmux list --agent codex
+./bin/opencode-tmux list --agent pi
 ./bin/opencode-tmux list --provider plugin --waiting
 ./bin/opencode-tmux inspect <target> --provider plugin
 ./bin/opencode-tmux status --provider plugin --style tmux

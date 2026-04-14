@@ -17,15 +17,15 @@ Issue notes:
 - [x] Research the existing repo architecture
 - [x] Research Pi docs, extension model, and session/runtime options
 - [x] Write an implementation plan
-- [ ] Refactor runtime dispatch to support Pi as a first-class agent
-- [ ] Add Pi pane detection
-- [ ] Add bundled Pi extension state publisher
-- [ ] Add Pi runtime reader and attachment logic
-- [ ] Add preview / command fallback
-- [ ] Add tmux install flow for the Pi extension
-- [ ] Update CLI, filters, and user-facing labels
-- [ ] Add tests
-- [ ] Update README / usage docs
+- [x] Refactor runtime dispatch to support Pi as a first-class agent
+- [x] Add Pi pane detection
+- [x] Add bundled Pi extension state publisher
+- [x] Add Pi runtime reader and attachment logic
+- [x] Add preview / command fallback
+- [x] Add tmux install flow for the Pi extension
+- [x] Update CLI, filters, and user-facing labels
+- [x] Add tests
+- [x] Update README / usage docs
 
 ### Detailed task list
 
@@ -39,76 +39,85 @@ Issue notes:
 
 #### 1. Runtime model and dispatch refactor
 
-- [ ] Add `"pi"` to `AgentKind` in `src/types.ts`
-- [ ] Add Pi-specific runtime source/provider values in `src/types.ts`
-- [ ] Refactor `attachRuntimeToPanes()` routing so Pi is not treated as OpenCode
-- [ ] Introduce a Pi-specific runtime module, likely `src/core/pi.ts`
-- [ ] Keep existing OpenCode and Codex behavior unchanged
+- [x] Add `"pi"` to `AgentKind` in `src/types.ts`
+- [x] Add Pi-specific runtime source/provider values in `src/types.ts`
+- [x] Refactor `attachRuntimeToPanes()` routing so Pi is not treated as OpenCode
+- [x] Introduce a Pi-specific runtime module, likely `src/core/pi.ts`
+- [x] Keep existing OpenCode and Codex behavior unchanged
 
 #### 2. Pi pane detection
 
-- [ ] Add Pi command-based detection in `src/core/tmux.ts`
-- [ ] Add optional Pi title-based supporting heuristics
-- [ ] Extend agent filtering so `--agent pi` is supported
-- [ ] Add/update detection tests in `test/tmux.test.ts`
+- [x] Add Pi command-based detection in `src/core/tmux.ts`
+- [x] Add optional Pi title-based supporting heuristics
+- [x] Extend agent filtering so `--agent pi` is supported
+- [x] Add/update detection tests in `test/tmux.test.ts`
 
 #### 3. Bundled Pi extension
 
-- [ ] Create a bundled Pi extension file under `plugin/`
-- [ ] Resolve `TMUX_PANE` to tmux target from inside the extension
-- [ ] Persist normalized Pi state files under an `opencode-tmux` state directory
-- [ ] Map Pi lifecycle events to minimal normalized states
-- [ ] Add conservative best-effort waiting-input detection
+- [x] Create a bundled Pi extension file under `plugin/`
+- [x] Resolve `TMUX_PANE` to tmux target from inside the extension
+- [x] Persist normalized Pi state files under an `opencode-tmux` state directory
+- [x] Map Pi lifecycle events to minimal normalized states
+- [x] Add conservative best-effort waiting-input detection
 
 #### 4. Pi runtime state reader
 
-- [ ] Read Pi state files from disk
-- [ ] Match by exact target first
-- [ ] Match by exact pane id second
-- [ ] Allow cwd fallback only when unambiguous
-- [ ] Convert matched state into `RuntimeInfo`
+- [x] Read Pi state files from disk
+- [x] Match by exact target first
+- [x] Match by exact pane id second
+- [x] Allow cwd fallback only when unambiguous
+- [x] Convert matched state into `RuntimeInfo`
 
 #### 5. Pi fallback behavior
 
-- [ ] Add preview-based Pi runtime classification
-- [ ] Add command-only fallback when preview is inconclusive
-- [ ] Ensure unmatched Pi panes still show up with safe coarse status
+- [x] Add preview-based Pi runtime classification
+- [x] Add command-only fallback when preview is inconclusive
+- [x] Ensure unmatched Pi panes still show up with safe coarse status
 
 #### 6. tmux plugin integration
 
-- [ ] Add install/update logic for the bundled Pi extension in `opencode-tmux.tmux`
-- [ ] Add a tmux option for enabling/disabling Pi extension installation
-- [ ] Surface a helpful message telling users to restart Pi sessions after install
-- [ ] Decide on the final install path under `~/.pi/agent/extensions/`
+- [x] Add install/update logic for the bundled Pi extension in `opencode-tmux.tmux`
+- [x] Add a tmux option for enabling/disabling Pi extension installation
+- [x] Surface a helpful message telling users to restart Pi sessions after install
+- [x] Decide on the final install path under `~/.pi/agent/extensions/`
 
 #### 7. CLI and UX updates
 
-- [ ] Update `src/cli.ts` agent validation and help text to include Pi
-- [ ] Update render/help text to avoid OpenCode-only wording where mixed agents are shown
-- [ ] Update popup/menu/status titles to use agent-neutral wording where appropriate
-- [ ] Verify `list`, `inspect`, `switch`, `popup`, and `status` work for Pi panes
+- [x] Update `src/cli.ts` agent validation and help text to include Pi
+- [x] Update render/help text to avoid OpenCode-only wording where mixed agents are shown
+- [x] Update popup/menu/status titles to use agent-neutral wording where appropriate
+- [x] Verify `list`, `inspect`, `switch`, `popup`, and `status` work for Pi panes
 
 #### 8. Tests
 
-- [ ] Add `test/pi.test.ts`
-- [ ] Add Pi runtime attachment tests
-- [ ] Add Pi fallback tests
-- [ ] Add CLI coverage for `--agent pi`
-- [ ] Add render coverage for mixed OpenCode/Codex/Pi outputs
-- [ ] Run the full test suite and fix regressions
+- [x] Add `test/pi.test.ts`
+- [x] Add Pi runtime attachment tests
+- [x] Add Pi fallback tests
+- [x] Add CLI coverage for `--agent pi`
+- [x] Add render coverage for mixed OpenCode/Codex/Pi outputs
+- [x] Run the full test suite and fix regressions
 
 #### 9. Documentation
 
-- [ ] Update `README.md` to mention Pi support
-- [ ] Document the bundled Pi extension installation behavior
-- [ ] Document any new tmux option(s)
-- [ ] Document fallback behavior and limitations
+- [x] Update `README.md` to mention Pi support
+- [x] Document the bundled Pi extension installation behavior
+- [x] Document any new tmux option(s)
+- [x] Document fallback behavior and limitations
 
 ### Progress notes
 
 Use this section to record implementation progress as work lands.
 
 - 2026-04-14: Researched the repo and Pi docs; wrote the initial Pi support plan and task list.
+- 2026-04-14: Completed task group 1. Pi is now a first-class internal agent kind, runtime dispatch has an explicit Pi path, `src/core/pi.ts` exists as the new Pi runtime module entry point, and the full test suite passed.
+- 2026-04-14: Completed task group 2. Pi panes are now detected from tmux command/title signals, `--agent pi` is supported by CLI filtering, and test coverage was added in `test/tmux.test.ts`, `test/render.test.ts`, and `test/cli.test.ts`.
+- 2026-04-14: Completed task group 3. Added the bundled Pi extension at `plugin/pi-tmux.ts`; it resolves `TMUX_PANE`, writes normalized state files under `~/.local/state/opencode-tmux/pi-state` (or `OPENCODE_TMUX_PI_STATE_DIR`), tracks `session_start`/`agent_start`/`turn_start`/`agent_end`, and does conservative waiting-input detection.
+- 2026-04-14: Completed task group 4. `src/core/pi.ts` now reads Pi state files from disk, matches them by target, pane id, and safe cwd fallback, and converts matched state into normalized `RuntimeInfo` with Pi-specific provider/source metadata.
+- 2026-04-14: Completed task group 5. Pi now has preview-based waiting-input classification plus a coarse `pi-command` fallback, and focused runtime coverage was added in `test/pi.test.ts`.
+- 2026-04-14: Completed task group 6. `opencode-tmux.tmux` now installs the bundled Pi extension from `plugin/pi-tmux.ts` into `~/.pi/agent/extensions/opencode-tmux/index.ts` (or `PI_CODING_AGENT_DIR`), controlled by `@opencode-tmux-install-pi-extension`, and prompts the user to restart Pi sessions when the installed link changes.
+- 2026-04-14: Completed task group 7. CLI agent help/validation now includes Pi, mixed-agent popup/menu defaults use `Coding Agent Sessions`, and Pi panes are verified in the core CLI flows.
+- 2026-04-14: Completed task group 8. Added `test/pi.test.ts` for Pi state matching and fallback behavior, expanded CLI and render coverage for Pi and mixed-agent cases, and re-ran the full test suite plus `tsc --noEmit` cleanly.
+- 2026-04-14: Completed task group 9. Updated `README.md` with Pi support details, the bundled Pi extension install path and state directory, the new `@opencode-tmux-install-pi-extension` option, and Pi fallback behavior/limitations.
 
 ## Research summary
 

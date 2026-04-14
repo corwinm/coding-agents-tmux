@@ -8,6 +8,7 @@ import {
   type CodexStateEntry,
   type CodexStateFile,
 } from "./codex.ts";
+import { attachRuntimeWithPi } from "./pi.ts";
 import { capturePanePreview } from "./tmux.ts";
 import type {
   CodexRuntimeDebug,
@@ -1466,24 +1467,28 @@ export async function attachRuntimeToPanes(
   panes: DiscoveredPane[],
   options: RuntimeProviderOptions = {},
 ): Promise<PaneRuntimeSummary[]> {
+  const opencodePanes = panes.filter((entry) => entry.detection.agent === "opencode");
   const codexPanes = panes.filter((entry) => entry.detection.agent === "codex");
-  const opencodePanes = panes.filter((entry) => entry.detection.agent !== "codex");
+  const piPanes = panes.filter((entry) => entry.detection.agent === "pi");
 
-  if (codexPanes.length === 0) {
+  if (codexPanes.length === 0 && piPanes.length === 0) {
     return attachRuntimeWithOpencodeProvider(panes, options);
   }
 
-  if (opencodePanes.length === 0) {
-    return attachRuntimeWithCodex(panes);
+  if (opencodePanes.length === 0 && piPanes.length === 0) {
+    return attachRuntimeWithCodex(codexPanes);
   }
 
-  const [opencodeResults, codexResults] = await Promise.all([
-    attachRuntimeWithOpencodeProvider(opencodePanes, options),
-    attachRuntimeWithCodex(codexPanes),
+  if (opencodePanes.length === 0 && codexPanes.length === 0) {
+    return attachRuntimeWithPi(piPanes);
+  }
+
+  const resultGroups = await Promise.all([
+    opencodePanes.length > 0 ? attachRuntimeWithOpencodeProvider(opencodePanes, options) : [],
+    codexPanes.length > 0 ? attachRuntimeWithCodex(codexPanes) : [],
+    piPanes.length > 0 ? attachRuntimeWithPi(piPanes) : [],
   ]);
-  const resultsByTarget = new Map(
-    [...opencodeResults, ...codexResults].map((entry) => [entry.pane.target, entry]),
-  );
+  const resultsByTarget = new Map(resultGroups.flat().map((entry) => [entry.pane.target, entry]));
 
   return panes.map((entry) => {
     const result = resultsByTarget.get(entry.pane.target);

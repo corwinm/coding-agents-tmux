@@ -121,6 +121,20 @@ test("detectAgentPane recognizes strong OpenCode title and command signals", () 
   });
 });
 
+test("detectAgentPane recognizes Pi command and title signals", () => {
+  const pane = createPane({
+    paneTitle: "π - repo",
+    currentCommand: "pi",
+    currentPath: "/tmp/project",
+  });
+
+  assert.deepEqual(detectAgentPane(pane), {
+    agent: "pi",
+    confidence: "high",
+    reasons: ["title:Pi", "command:pi"],
+  });
+});
+
 test("detectAgentPane keeps path-only matches low confidence and unmatched", () => {
   const pane = createPane({
     paneTitle: "shell",
@@ -296,6 +310,48 @@ test("renderCompactPaneList falls back to unmatched and untitled labels", () => 
     renderCompactPaneList([pane]),
     "work:1.1\tunknown\tunknown\tunmapped\t0\t(unmatched)\t(untitled)\t/Users/corwin/Developer/opencode-tmux",
   );
+});
+
+test("renderPaneTable and renderCompactPaneList handle mixed OpenCode, Codex, and Pi panes", () => {
+  const opencodePane = createSummary("idle", {
+    pane: createPane({ target: "work:1.0" }),
+  });
+  const codexPane = createSummary("running", {
+    pane: createPane({
+      target: "work:1.1",
+      paneIndex: 1,
+      paneTitle: "Codex",
+      currentCommand: "codex",
+    }),
+    detection: { agent: "codex", confidence: "medium", reasons: ["command:codex"] },
+    runtime: createRuntime("running", {
+      source: "codex-command",
+      match: { strategy: "exact", provider: "codex", heuristic: false },
+      session: null,
+    }),
+  });
+  const piPane = createSummary("running", {
+    pane: createPane({
+      target: "work:1.2",
+      paneIndex: 2,
+      paneTitle: "π - repo",
+      currentCommand: "pi",
+    }),
+    detection: { agent: "pi", confidence: "high", reasons: ["title:Pi", "command:pi"] },
+    runtime: createRuntime("running", {
+      source: "pi-command",
+      match: { strategy: "exact", provider: "pi", heuristic: false },
+      session: null,
+    }),
+  });
+
+  const tableOutput = renderPaneTable([opencodePane, codexPane, piPane]);
+  const compactOutput = renderCompactPaneList([opencodePane, codexPane, piPane]);
+
+  assert.match(tableOutput, /opencode/);
+  assert.match(tableOutput, /codex/);
+  assert.match(tableOutput, /pi/);
+  assert.match(compactOutput, /work:1\.2\tbusy\trunning\tpi-command/);
 });
 
 test("renderInspectResult includes pane, detection, and session details", () => {

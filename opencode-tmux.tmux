@@ -331,8 +331,37 @@ install_codex_hooks() {
   fi
 }
 
+install_pi_extension() {
+  local extension_source pi_dir extension_dir extension_target existing_target installed_changed
+
+  extension_source="$CURRENT_DIR/plugin/pi-tmux.ts"
+
+  if [ ! -f "$extension_source" ]; then
+    tmux display-message "opencode-tmux: missing plugin/pi-tmux.ts in plugin directory"
+    return
+  fi
+
+  pi_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+  extension_dir="$pi_dir/extensions/opencode-tmux"
+  extension_target="$extension_dir/index.ts"
+  existing_target="$(readlink "$extension_target" 2>/dev/null || true)"
+  installed_changed='off'
+
+  if [ "$existing_target" != "$extension_source" ]; then
+    installed_changed='on'
+  fi
+
+  mkdir -p "$extension_dir"
+  ln -sfn "$extension_source" "$extension_target"
+  tmux set-option -gq @opencode-tmux-pi-extension-path "$extension_target"
+
+  if [ "$installed_changed" = 'on' ]; then
+    tmux display-message "opencode-tmux: Pi extension installed; restart Pi sessions to load it"
+  fi
+}
+
 main() {
-  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex status_text_segment status_inline_segment status_tone_segment status_refresh_command
+  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex install_pi status_text_segment status_inline_segment status_tone_segment status_refresh_command
   local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown
   local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key
   menu_key="$(normalize_binding_key "$(get_tmux_option '@opencode-tmux-menu-key' 'O')")"
@@ -344,9 +373,10 @@ main() {
   popup_filter="$(get_tmux_option '@opencode-tmux-popup-filter' 'all')"
   popup_width="$(get_tmux_option '@opencode-tmux-popup-width' '100%')"
   popup_height="$(get_tmux_option '@opencode-tmux-popup-height' '100%')"
-  popup_title="$(get_tmux_option '@opencode-tmux-popup-title' 'OpenCode Sessions')"
+  popup_title="$(get_tmux_option '@opencode-tmux-popup-title' 'Coding Agent Sessions')"
   install_plugin="$(normalize_toggle "$(get_tmux_option '@opencode-tmux-install-opencode-plugin' 'on')")"
   install_codex="$(normalize_toggle "$(get_tmux_option '@opencode-tmux-install-codex-hooks' 'on')")"
+  install_pi="$(normalize_toggle "$(get_tmux_option '@opencode-tmux-install-pi-extension' 'on')")"
   status_enabled="$(get_tmux_option '@opencode-tmux-status' 'on')"
   status_style="$(get_tmux_option '@opencode-tmux-status-style' 'tmux')"
   status_position="$(get_tmux_option '@opencode-tmux-status-position' 'right')"
@@ -381,6 +411,10 @@ main() {
 
   if [ "$install_codex" = "on" ]; then
     install_codex_hooks
+  fi
+
+  if [ "$install_pi" = "on" ]; then
+    install_pi_extension
   fi
 
   local popup_filter_arg=""

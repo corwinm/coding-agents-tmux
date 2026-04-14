@@ -92,7 +92,7 @@ if [ "$waiting_only" = "on" ] && [ "${#LINES[@]}" -eq 1 ]; then
   exit 0
 fi
 
-MENU_CMD=(tmux display-menu -T "OpenCode Sessions" -x C -y C)
+MENU_CMD=(tmux display-menu -T "Coding Agent Sessions" -x C -y C)
 
 target_width=0
 session_width=0

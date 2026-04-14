@@ -80,7 +80,7 @@ ${resolvedScript}
   return { pathEntry: dir, logPath };
 }
 
-test("detectAgentPane recognizes OpenCode, Codex, and no-signal panes", () => {
+test("detectAgentPane recognizes OpenCode, Codex, Pi, and no-signal panes", () => {
   assert.deepEqual(
     detectAgentPane(createPane({ paneTitle: "OC | reviewing", currentCommand: "bash" })),
     {
@@ -115,6 +115,12 @@ test("detectAgentPane recognizes OpenCode, Codex, and no-signal panes", () => {
       reasons: ["command:codex"],
     },
   );
+
+  assert.deepEqual(detectAgentPane(createPane({ paneTitle: "π - work", currentCommand: "pi" })), {
+    agent: "pi",
+    confidence: "high",
+    reasons: ["title:Pi", "command:pi"],
+  });
 
   assert.deepEqual(
     detectAgentPane(
@@ -173,12 +179,19 @@ test("discoverAgentPanesFromList filters non-agent panes and sorts targets", () 
       paneTitle: "shell",
       currentCommand: "codex",
     }),
-    createPane({ target: "work:1.2", paneIndex: 2 }),
+    createPane({
+      target: "work:1.2",
+      paneIndex: 2,
+      paneTitle: "π - project",
+      currentCommand: "pi",
+      currentPath: "/tmp/pi-project",
+    }),
+    createPane({ target: "work:1.3", paneIndex: 3 }),
   ];
 
   assert.deepEqual(
     discoverAgentPanesFromList(panes).map((entry) => entry.pane.target),
-    ["work:1.1", "work:1.2", "work:2.1"],
+    ["work:1.1", "work:1.2", "work:1.3", "work:2.1"],
   );
 });
 
