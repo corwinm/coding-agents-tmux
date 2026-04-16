@@ -58,11 +58,7 @@ Preferred TPM entry:
 set -g @plugin 'corwinm/coding-agents-tmux'
 ```
 
-Transition fallback if you have not renamed the repo slug yet:
-
-```tmux
-set -g @plugin 'corwinm/opencode-tmux'
-```
+If you already had the plugin installed before the rename, update your TPM entry to the new repo slug so your local config matches the current docs and release notes.
 
 ### 2. Update your tmux option names
 

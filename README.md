@@ -30,12 +30,6 @@ Add the plugin to `~/.tmux.conf`:
 set -g @plugin 'corwinm/coding-agents-tmux'
 ```
 
-If the GitHub slug has not been renamed yet in your local setup, the old TPM reference may still be the one that exists during the transition:
-
-```tmux
-set -g @plugin 'corwinm/opencode-tmux'
-```
-
 Recommended settings:
 
 ```tmux

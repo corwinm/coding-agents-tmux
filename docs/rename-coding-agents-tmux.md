@@ -80,7 +80,7 @@ These do **not** need to happen immediately if compatibility cost is high:
 
 Primary known names today:
 
-- repo slug: `corwinm/opencode-tmux`
+- repo slug: `corwinm/coding-agents-tmux`
 - package name: `opencode-tmux`
 - CLI binary: `opencode-tmux`
 - tmux plugin entrypoint: `opencode-tmux.tmux`
@@ -187,7 +187,7 @@ Potential exception:
 Tasks:
 
 - update `README.md` title and main description
-- update install examples from `corwinm/opencode-tmux` to `corwinm/coding-agents-tmux`
+- ensure install examples use `corwinm/coding-agents-tmux`
 - add a migration section for existing users
 - audit docs for `opencode`-specific language that really means mixed coding agents
 - add release notes/changelog entry for the rename
@@ -388,13 +388,13 @@ Checklist:
 
 Risk:
 
-- users may still reference `corwinm/opencode-tmux` in `~/.tmux.conf`
+- users may still reference the pre-rename repo slug in `~/.tmux.conf`
 - plugin file names may be assumed by TPM or local scripts
 
 Mitigation:
 
 - keep compatibility entrypoints/shims
-- clearly document the old and new TPM snippets during transition
+- clearly document the canonical TPM snippet during transition
 
 ### 2. Split state between old and new directories
 
