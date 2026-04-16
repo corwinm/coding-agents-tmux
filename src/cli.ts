@@ -33,6 +33,7 @@ import {
   getCurrentTmuxTarget,
   switchToPane,
 } from "./core/tmux.ts";
+import { PRIMARY_CLI_NAME } from "./naming.ts";
 import { runCommand, sleep } from "./runtime.ts";
 import type {
   InspectResult,
@@ -148,7 +149,7 @@ export function pickWindowStatusRepresentative(
 }
 
 const REPO_ROOT = fileURLToPath(new URL("../", import.meta.url));
-const CLI_PATH = join(REPO_ROOT, "bin", "opencode-tmux");
+const CLI_PATH = join(REPO_ROOT, "bin", PRIMARY_CLI_NAME);
 const DEFAULT_RUNTIME_PROVIDER = "plugin";
 const STATUS_REFRESH_HOOKS = [
   "client-attached",
@@ -269,7 +270,7 @@ async function watchListCommand(options: ListOptions): Promise<void> {
   for (;;) {
     const panesWithRuntime = filterPaneSummaries(await loadPaneRuntimeSummaries(options), options);
     clearScreen();
-    console.log(`opencode-tmux list --watch (${new Date().toLocaleTimeString()})`);
+    console.log(`${PRIMARY_CLI_NAME} list --watch (${new Date().toLocaleTimeString()})`);
     console.log(`refresh every ${intervalSeconds}s`);
     console.log();
     console.log(renderListOutput(panesWithRuntime, options));
@@ -365,7 +366,9 @@ async function watchInspectCommand(target: string, options: InspectOptions): Pro
 
   for (;;) {
     clearScreen();
-    console.log(`opencode-tmux inspect ${target} --watch (${new Date().toLocaleTimeString()})`);
+    console.log(
+      `${PRIMARY_CLI_NAME} inspect ${target} --watch (${new Date().toLocaleTimeString()})`,
+    );
     console.log(`refresh every ${intervalSeconds}s`);
     console.log();
     console.log(await renderInspectOutput(target, options));
@@ -722,7 +725,7 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
   const waitingPopupKey = options.waitingPopupKey ?? "C-w";
 
   return [
-    "# >>> opencode-tmux >>>",
+    "# >>> coding-agents-tmux >>>",
     `bind-key ${menuKey} run-shell ${tmuxDoubleQuote(menuCommand)}`,
     `bind-key ${popupKey} display-popup -E -w 100% -h 100% -T ${tmuxDoubleQuote("Coding Agent Sessions")} ${tmuxDoubleQuote(popupCommand)}`,
     `bind-key ${waitingMenuKey} run-shell ${tmuxDoubleQuote(waitingMenuCommand)}`,
@@ -730,7 +733,7 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
     "set -g status-interval 0",
     ...statusRefreshHookLines,
     `set -g status-right ${tmuxDoubleQuote(`#(${statusCommand})`)}`,
-    "# <<< opencode-tmux <<<",
+    "# <<< coding-agents-tmux <<<",
   ].join("\n");
 }
 
@@ -743,15 +746,22 @@ export function getTmuxConfigPath(file: string | undefined): string {
 }
 
 export function updateTmuxConfig(existing: string, snippet: string): string {
-  const startMarker = "# >>> opencode-tmux >>>";
-  const endMarker = "# <<< opencode-tmux <<<";
-  const blockPattern = new RegExp(
-    `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}`,
-  );
+  const markerPairs = [
+    ["# >>> coding-agents-tmux >>>", "# <<< coding-agents-tmux <<<"],
+    ["# >>> opencode-tmux >>>", "# <<< opencode-tmux <<<"],
+  ] as const;
 
-  return blockPattern.test(existing)
-    ? existing.replace(blockPattern, snippet)
-    : `${existing.trimEnd()}${existing.trimEnd() ? "\n\n" : ""}${snippet}\n`;
+  for (const [startMarker, endMarker] of markerPairs) {
+    const blockPattern = new RegExp(
+      `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}`,
+    );
+
+    if (blockPattern.test(existing)) {
+      return existing.replace(blockPattern, snippet);
+    }
+  }
+
+  return `${existing.trimEnd()}${existing.trimEnd() ? "\n\n" : ""}${snippet}\n`;
 }
 
 async function runInstallTmuxCommand(options: InstallTmuxOptions): Promise<void> {
@@ -769,8 +779,10 @@ async function main(): Promise<void> {
   const program = new Command();
 
   program
-    .name("opencode-tmux")
-    .description("CLI tooling for discovering and navigating coding agent sessions running in tmux")
+    .name(PRIMARY_CLI_NAME)
+    .description(
+      "CLI tooling for discovering and navigating terminal coding agent sessions in tmux",
+    )
     .showHelpAfterError();
 
   program.addHelpText("after", `\n${getRuntimeProviderHelpText()}`);
@@ -956,7 +968,7 @@ async function main(): Promise<void> {
 
   program
     .command("install-tmux")
-    .description("Install or update an opencode-tmux snippet in a tmux config file")
+    .description("Install or update a coding-agents-tmux snippet in a tmux config file")
     .option("--agent <agent>", "Limit panes to all, opencode, codex, or pi", "all")
     .option(
       "--provider <provider>",
@@ -989,7 +1001,7 @@ async function main(): Promise<void> {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);
-    console.error(`opencode-tmux: ${message}`);
+    console.error(`${PRIMARY_CLI_NAME}: ${message}`);
     process.exit(1);
   });
 }

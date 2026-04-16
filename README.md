@@ -1,19 +1,36 @@
-# opencode-tmux
+# coding-agents-tmux
 
 `tmux` integration for terminal coding agent sessions.
 
-Install it with TPM to:
+It helps you:
 
 - open a chooser of active coding agent panes
 - jump straight to panes waiting on your answer
-- show the current pane state plus background session summary in the status line
-- use plugin-backed runtime state instead of relying only on sqlite heuristics
+- show the current pane state plus a background session summary in the status line
+- use local plugin and hook state instead of relying only on sqlite or pane heuristics
 
-Today the strongest runtime support is still for `opencode`, and the repo now also detects `codex` and `pi` panes for discovery, switching, popup navigation, and status summaries.
+Today the strongest runtime support is still for `opencode`, and the project also supports `codex` and `pi` panes for discovery, switching, popup navigation, and status summaries.
+
+## Rename status
+
+This project is being renamed from `opencode-tmux` to `coding-agents-tmux`.
+
+In this update:
+
+- **preferred public name:** `coding-agents-tmux`
+- **temporary compatibility aliases:** `opencode-tmux`, `@opencode-tmux-*`, and `OPENCODE_TMUX_*`
+
+The legacy names still work for now, but they are transition aliases and are not intended to stay forever.
 
 ## Install
 
 Add the plugin to `~/.tmux.conf`:
+
+```tmux
+set -g @plugin 'corwinm/coding-agents-tmux'
+```
+
+If the GitHub slug has not been renamed yet in your local setup, the old TPM reference may still be the one that exists during the transition:
 
 ```tmux
 set -g @plugin 'corwinm/opencode-tmux'
@@ -22,15 +39,15 @@ set -g @plugin 'corwinm/opencode-tmux'
 Recommended settings:
 
 ```tmux
-set -g @opencode-tmux-provider 'plugin'
-set -g @opencode-tmux-menu-key 'O'
-set -g @opencode-tmux-popup-key 'P'
-set -g @opencode-tmux-waiting-menu-key 'W'
-set -g @opencode-tmux-waiting-popup-key 'C-w'
-set -g @opencode-tmux-status 'on'
-set -g @opencode-tmux-status-style 'tmux'
-set -g @opencode-tmux-status-position 'right'
-set -g @opencode-tmux-status-interval '0'
+set -g @coding-agents-tmux-provider 'plugin'
+set -g @coding-agents-tmux-menu-key 'O'
+set -g @coding-agents-tmux-popup-key 'P'
+set -g @coding-agents-tmux-waiting-menu-key 'W'
+set -g @coding-agents-tmux-waiting-popup-key 'C-w'
+set -g @coding-agents-tmux-status 'on'
+set -g @coding-agents-tmux-status-style 'tmux'
+set -g @coding-agents-tmux-status-position 'right'
+set -g @coding-agents-tmux-status-interval '0'
 ```
 
 Those defaults favor the bundled plugin provider and event-driven status redraws so tmux stops polling Node in the background.
@@ -38,11 +55,11 @@ Those defaults favor the bundled plugin provider and event-driven status redraws
 To match your tmux theme, you can also override the status colors:
 
 ```tmux
-set -g @opencode-tmux-status-color-neutral 'default'
-set -g @opencode-tmux-status-color-idle 'colour244'
-set -g @opencode-tmux-status-color-busy 'colour81'
-set -g @opencode-tmux-status-color-waiting 'colour214'
-set -g @opencode-tmux-status-color-unknown 'colour240'
+set -g @coding-agents-tmux-status-color-neutral 'default'
+set -g @coding-agents-tmux-status-color-idle 'colour244'
+set -g @coding-agents-tmux-status-color-busy 'colour81'
+set -g @coding-agents-tmux-status-color-waiting 'colour214'
+set -g @coding-agents-tmux-status-color-unknown 'colour240'
 ```
 
 Using `default` is a good way to let the segment inherit your existing tmux theme colors.
@@ -62,15 +79,24 @@ Requirements:
 - `codex` sessions must be restarted after first install so newly installed hooks are loaded
 - `pi` sessions must be restarted after first install so the bundled extension is loaded
 
-## What TPM Sets Up
+## What TPM sets up
 
-By default, the TPM plugin also installs the bundled `opencode` plugin by creating this symlink:
+By default, the TPM plugin also installs the bundled `opencode` plugin by creating these symlinks:
 
 ```text
+~/.config/opencode/plugins/coding-agents-tmux.ts
 ~/.config/opencode/plugins/opencode-tmux.ts
 ```
 
+The new path is preferred. The legacy path is kept as a temporary compatibility alias.
+
 That plugin publishes normalized session state files under:
+
+```text
+~/.local/state/coding-agents-tmux/plugin-state
+```
+
+The runtime also continues reading legacy state under:
 
 ```text
 ~/.local/state/opencode-tmux/plugin-state
@@ -79,16 +105,28 @@ That plugin publishes normalized session state files under:
 On first install, the tmux plugin also bootstraps the CLI runtime dependencies inside:
 
 ```text
-~/.tmux/plugins/opencode-tmux/node_modules
+~/.tmux/plugins/coding-agents-tmux/node_modules
 ```
 
 It also installs or updates the bundled Pi extension under:
+
+```text
+~/.pi/agent/extensions/coding-agents-tmux/index.ts
+```
+
+The legacy extension path is also kept during the transition:
 
 ```text
 ~/.pi/agent/extensions/opencode-tmux/index.ts
 ```
 
 That extension publishes normalized Pi state files under:
+
+```text
+~/.local/state/coding-agents-tmux/pi-state
+```
+
+The runtime also continues reading legacy Pi state under:
 
 ```text
 ~/.local/state/opencode-tmux/pi-state
@@ -104,19 +142,19 @@ It also installs or updates Codex hook integration under:
 You can disable the automatic symlink step with:
 
 ```tmux
-set -g @opencode-tmux-install-opencode-plugin 'off'
+set -g @coding-agents-tmux-install-opencode-plugin 'off'
 ```
 
 You can disable the automatic Pi extension setup with:
 
 ```tmux
-set -g @opencode-tmux-install-pi-extension 'off'
+set -g @coding-agents-tmux-install-pi-extension 'off'
 ```
 
 You can disable the automatic Codex hook setup with:
 
 ```tmux
-set -g @opencode-tmux-install-codex-hooks 'off'
+set -g @coding-agents-tmux-install-codex-hooks 'off'
 ```
 
 ## Usage
@@ -144,20 +182,20 @@ Inside the popup you can do more than pick a row number:
 You can configure each binding independently:
 
 ```tmux
-set -g @opencode-tmux-menu-key 'O'
-set -g @opencode-tmux-popup-key 'P'
-set -g @opencode-tmux-waiting-menu-key 'W'
-set -g @opencode-tmux-waiting-popup-key 'C-w'
+set -g @coding-agents-tmux-menu-key 'O'
+set -g @coding-agents-tmux-popup-key 'P'
+set -g @coding-agents-tmux-waiting-menu-key 'W'
+set -g @coding-agents-tmux-waiting-popup-key 'C-w'
 ```
 
 Set any of them to `off` to disable that binding.
 
-## Status Line
+## Status line
 
 When enabled, the status line shows two views at once:
 
 - the current pane state
-- a compact summary of the remaining `opencode` panes
+- a compact summary of the remaining detected coding-agent panes
 
 Example output:
 
@@ -170,16 +208,16 @@ Example output:
 You can also replace the default icon with your own label or a different Nerd Font icon:
 
 ```tmux
-set -g @opencode-tmux-status-prefix '󰚩'
+set -g @coding-agents-tmux-status-prefix '󰚩'
 ```
 
 This means:
 
 - `󰚩 |  idle |   ` means the focused pane is idle and the background panes are waiting, busy, and idle in target order
 - `󰚩 |  busy | ` means the focused pane is busy and more than eight background panes are shown in compact symbol mode
-- `󰚩 |  new | none` means the focused pane is newly started and there are no other detected `opencode` panes
+- `󰚩 |  new | none` means the focused pane is newly started and there are no other detected coding-agent panes
 
-If your active pane is not an `opencode` pane, the status line uses the strongest detected `opencode` pane in the current tmux window. `opencode` panes in other windows are counted as background work.
+If your active pane is not a detected coding-agent pane, the status line uses the strongest detected coding-agent pane in the current tmux window. Other panes are counted as background work.
 
 Background pane symbols are shown in a stable target order:
 
@@ -194,74 +232,74 @@ By default the status line adds spaces between background pane symbols for reada
 Enable or tune the status line with:
 
 ```tmux
-set -g @opencode-tmux-status 'on'
-set -g @opencode-tmux-status-style 'tmux'
-set -g @opencode-tmux-status-position 'right'
-set -g @opencode-tmux-status-interval '0'
+set -g @coding-agents-tmux-status 'on'
+set -g @coding-agents-tmux-status-style 'tmux'
+set -g @coding-agents-tmux-status-position 'right'
+set -g @coding-agents-tmux-status-interval '0'
 ```
 
-By default the plugin now uses manual mode so your theme can place the segment itself.
+By default the plugin uses manual mode so your theme can place the segment itself.
 
-With the bundled plugin provider, `0` makes the status line event-driven: `opencode` session events and tmux navigation hooks trigger redraws, instead of polling on a timer. If you switch to the `sqlite` or `server` provider, set a positive interval if you still want periodic background refreshes.
+With the bundled plugin provider, `0` makes the status line event-driven: session events and tmux navigation hooks trigger redraws instead of polling on a timer. If you switch to the `sqlite` or `server` provider, set a positive interval if you still want periodic background refreshes.
 
-For Catppuccin, use the native module the plugin exports:
+For Catppuccin, the exported module name still uses its legacy compatibility name for now:
 
 ```tmux
-set -g @opencode-tmux-status 'on'
-set -g @opencode-tmux-status-mode 'manual'
+set -g @coding-agents-tmux-status 'on'
+set -g @coding-agents-tmux-status-mode 'manual'
 
 set -g status-right "#{E:@catppuccin_status_session}"
 set -ag status-right "#{E:@catppuccin_status_directory}"
 set -ag status-right "#{E:@catppuccin_status_opencode}"
 ```
 
-For other themes, use the tone-aware inline export if you want the summary colors to follow busy/waiting/idle/unknown automatically:
+For other themes, use the tone-aware inline export:
 
 ```tmux
-set -g @opencode-tmux-status 'on'
-set -g @opencode-tmux-status-mode 'manual'
+set -g @coding-agents-tmux-status 'on'
+set -g @coding-agents-tmux-status-mode 'manual'
 
-set -ag status-right " #{@opencode-tmux-status-inline-format}"
+set -ag status-right " #{@coding-agents-tmux-status-inline-format}"
 ```
 
 If you want to fully control the wrapper yourself, use the plain text export instead:
 
 ```tmux
-set -ag status-right " #[fg=colour81]󰚩 #[default]#{@opencode-tmux-status-text}"
+set -ag status-right " #[fg=colour81]󰚩 #[default]#{@coding-agents-tmux-status-text}"
 ```
 
-`manual` mode is the default. `#{E:@catppuccin_status_opencode}` gives Catppuccin users a native-looking module, `#{@opencode-tmux-status-inline-format}` gives other themes a tone-aware inline segment, and `#{@opencode-tmux-status-text}` gives a plain live summary text export for fully custom wrappers. `append` mode restores the old behavior and appends automatically.
-
-When using the Catppuccin module, the segment reuses your configured `@opencode-tmux-status-color-*` palette: busy stays on the busy color, waiting turns to the waiting color, idle turns to the idle color, and no detected panes falls back to the unknown color.
+`manual` mode is the default. `#{E:@catppuccin_status_opencode}` gives Catppuccin users a native-looking module, `#{@coding-agents-tmux-status-inline-format}` gives other themes a tone-aware inline segment, and `#{@coding-agents-tmux-status-text}` gives a plain live summary text export for fully custom wrappers. `append` mode restores the old behavior and appends automatically.
 
 ## Configuration
 
 Available tmux options:
 
-- `@opencode-tmux-menu-key` main menu chooser key, default `O`
-- `@opencode-tmux-popup-key` main popup chooser key, default `P`
-- `@opencode-tmux-waiting-menu-key` waiting-only menu chooser key, default `W`
-- `@opencode-tmux-waiting-popup-key` waiting-only popup chooser key, default `C-w`
-- `@opencode-tmux-install-opencode-plugin` `on` or `off`, default `on`
-- `@opencode-tmux-install-pi-extension` `on` or `off`, default `on`
-- `@opencode-tmux-install-codex-hooks` `on` or `off`, default `on`
-- `@opencode-tmux-provider` `auto`, `plugin`, `sqlite`, or `server`, default `plugin`
-- `@opencode-tmux-server-map` JSON object or JSON file path for explicit server endpoints
-- `@opencode-tmux-popup-filter` one of `all`, `busy`, `waiting`, `running`, `active`
-- `@opencode-tmux-popup-width` popup width, default `100%`
-- `@opencode-tmux-popup-height` popup height, default `100%`
-- `@opencode-tmux-popup-title` popup title, default `Coding Agent Sessions`
-- `@opencode-tmux-status` `on` or `off`, default `on`
-- `@opencode-tmux-status-style` `plain` or `tmux`, default `tmux`
-- `@opencode-tmux-status-mode` `append` or `manual`, default `manual`
-- `@opencode-tmux-status-position` `right` or `left`, default `right`
-- `@opencode-tmux-status-interval` tmux `status-interval`, default `0`
-- `@opencode-tmux-status-prefix` label shown before the status summary, default `󰚩`
-- `@opencode-tmux-status-color-neutral` tmux color for the prefix and separators, default `colour252`
-- `@opencode-tmux-status-color-idle` tmux color for idle state, default `colour70`
-- `@opencode-tmux-status-color-busy` tmux color for busy state, default `colour220`
-- `@opencode-tmux-status-color-waiting` tmux color for waiting state, default `colour196`
-- `@opencode-tmux-status-color-unknown` tmux color for unknown/none state, default `colour244`
+- `@coding-agents-tmux-menu-key` main menu chooser key, default `O`
+- `@coding-agents-tmux-popup-key` main popup chooser key, default `P`
+- `@coding-agents-tmux-waiting-menu-key` waiting-only menu chooser key, default `W`
+- `@coding-agents-tmux-waiting-popup-key` waiting-only popup chooser key, default `C-w`
+- `@coding-agents-tmux-install-opencode-plugin` `on` or `off`, default `on`
+- `@coding-agents-tmux-install-pi-extension` `on` or `off`, default `on`
+- `@coding-agents-tmux-install-codex-hooks` `on` or `off`, default `on`
+- `@coding-agents-tmux-provider` `auto`, `plugin`, `sqlite`, or `server`, default `plugin`
+- `@coding-agents-tmux-server-map` JSON object or JSON file path for explicit server endpoints
+- `@coding-agents-tmux-popup-filter` one of `all`, `busy`, `waiting`, `running`, `active`
+- `@coding-agents-tmux-popup-width` popup width, default `100%`
+- `@coding-agents-tmux-popup-height` popup height, default `100%`
+- `@coding-agents-tmux-popup-title` popup title, default `Coding Agent Sessions`
+- `@coding-agents-tmux-status` `on` or `off`, default `on`
+- `@coding-agents-tmux-status-style` `plain` or `tmux`, default `tmux`
+- `@coding-agents-tmux-status-mode` `append` or `manual`, default `manual`
+- `@coding-agents-tmux-status-position` `right` or `left`, default `right`
+- `@coding-agents-tmux-status-interval` tmux `status-interval`, default `0`
+- `@coding-agents-tmux-status-prefix` label shown before the status summary, default `󰚩`
+- `@coding-agents-tmux-status-color-neutral` tmux color for the prefix and separators, default `colour252`
+- `@coding-agents-tmux-status-color-idle` tmux color for idle state, default `colour70`
+- `@coding-agents-tmux-status-color-busy` tmux color for busy state, default `colour220`
+- `@coding-agents-tmux-status-color-waiting` tmux color for waiting state, default `colour196`
+- `@coding-agents-tmux-status-color-unknown` tmux color for unknown/none state, default `colour244`
+
+Legacy `@opencode-tmux-*` tmux options still work for now as transition aliases.
 
 ## Providers
 
@@ -274,12 +312,12 @@ Provider modes:
 - `auto` uses plugin state when available, then server endpoints, then sqlite
 - `plugin` uses only plugin state files
 - `sqlite` uses the local `opencode` sqlite database
-- `server` uses explicit `opencode serve` endpoints from `@opencode-tmux-server-map`
+- `server` uses explicit `opencode serve` endpoints from `@coding-agents-tmux-server-map`
 
 Example:
 
 ```tmux
-set -g @opencode-tmux-provider 'plugin'
+set -g @coding-agents-tmux-provider 'plugin'
 ```
 
 ## Pi
@@ -291,19 +329,19 @@ Use `--agent opencode`, `--agent codex`, `--agent pi`, or `--agent all` on `list
 For the best Pi runtime fidelity, let the tmux plugin install the bundled Pi extension automatically. It is linked into:
 
 ```text
-~/.pi/agent/extensions/opencode-tmux/index.ts
+~/.pi/agent/extensions/coding-agents-tmux/index.ts
 ```
 
 That extension publishes pane-aware Pi state under:
 
 ```text
-~/.local/state/opencode-tmux/pi-state
+~/.local/state/coding-agents-tmux/pi-state
 ```
 
 Pi runtime support is intentionally minimal and extensible:
 
 - with the bundled Pi extension loaded, Pi panes can report `new`, `running`, `idle`, and best-effort `waiting-input`
-- without the extension, `opencode-tmux` falls back to pane preview heuristics when possible
+- without the extension, `coding-agents-tmux` falls back to pane preview heuristics when possible
 - if preview is inconclusive, Pi falls back to a coarse `running` state when a `pi` process is still detected in the tmux pane
 - Pi has no built-in permission or plan mode integration here yet, so those states are not modeled specially
 
@@ -311,7 +349,7 @@ After first install or update, restart Pi sessions in tmux so they load the bund
 
 ## Codex
 
-`codex` panes are detected from the live tmux pane command, so they now show up in `list`, `switch`, `popup`, and `status` alongside `opencode` panes.
+`codex` panes are detected from the live tmux pane command, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode` and `pi` panes.
 
 Use `--agent opencode`, `--agent codex`, `--agent pi`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
 
@@ -325,34 +363,34 @@ To enable higher-fidelity Codex state with Codex hooks:
 1. Let the tmux plugin install the global Codex config automatically, or run it manually:
 
 ```bash
-./bin/opencode-tmux install-codex
+./bin/coding-agents-tmux install-codex
 ```
 
 2. Optionally generate an additional repo-local hooks file:
 
 ```bash
 mkdir -p .codex
-./bin/opencode-tmux codex-hooks-template > .codex/hooks.json
+./bin/coding-agents-tmux codex-hooks-template > .codex/hooks.json
 ```
 
 3. Restart `codex` sessions in tmux so they begin publishing hook-backed state.
 
-With hooks enabled, `opencode-tmux` can mark Codex panes as `idle` or `waiting-input` between turns instead of showing every Codex pane as continuously `running`.
+With hooks enabled, `coding-agents-tmux` can mark Codex panes as `idle` or `waiting-input` between turns instead of showing every Codex pane as continuously `running`.
 
 ## Troubleshooting
 
 - `prefix + O` or `prefix + P` does nothing: make sure `node` and `npm` are installed and reload tmux
 - first TPM load feels slow: the plugin may be running `npm ci --omit=dev` to bootstrap dependencies
 - new panes show stale state: restart the `opencode` session so it reloads the plugin
-- waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/opencode-tmux.ts`
-- Pi still looks busy or unknown: confirm the bundled extension exists at `~/.pi/agent/extensions/opencode-tmux/index.ts` and restart the Pi session so it loads the extension
+- waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/coding-agents-tmux.ts`
+- Pi still looks busy or unknown: confirm the bundled extension exists at `~/.pi/agent/extensions/coding-agents-tmux/index.ts` and restart the Pi session so it loads the extension
 - Codex still always looks busy: confirm `~/.codex/config.toml` has `codex_hooks = true`, `~/.codex/hooks.json` exists, and restart the Codex session
-- status looks stale with `sqlite` or `server`: set `@opencode-tmux-status-interval` to a positive value because event-driven refreshes are centered on the bundled plugin provider
+- status looks stale with `sqlite` or `server`: set `@coding-agents-tmux-status-interval` to a positive value because event-driven refreshes are centered on the bundled plugin provider
 - TPM install changed but tmux still looks old: run `prefix + I` or `tmux source-file ~/.tmux.conf`
 
-## Local Development Sync
+## Local development sync
 
-If you edit this repo outside `~/.tmux/plugins/opencode-tmux`, tmux will still be using the TPM-installed copy until you sync it.
+If you edit this repo outside `~/.tmux/plugins/coding-agents-tmux`, tmux will still be using the TPM-installed copy until you sync it.
 
 Useful commands:
 
@@ -362,7 +400,7 @@ npm run sync-tmux -- --reload
 npm run sync-tmux -- --bootstrap --reload
 ```
 
-- `sync-tmux` copies this checkout into `~/.tmux/plugins/opencode-tmux`
+- `sync-tmux` copies this checkout into `~/.tmux/plugins/coding-agents-tmux`
 - `--reload` runs `tmux source-file ~/.tmux.conf` after syncing
 - `--bootstrap` reinstalls production dependencies in the synced plugin copy when `package.json` changed
 
@@ -373,11 +411,13 @@ The repository also includes a CLI for debugging and manual inspection.
 Useful commands:
 
 ```bash
-./bin/opencode-tmux list --provider plugin
-./bin/opencode-tmux list --agent codex
-./bin/opencode-tmux list --agent pi
-./bin/opencode-tmux list --provider plugin --waiting
-./bin/opencode-tmux inspect <target> --provider plugin
-./bin/opencode-tmux status --provider plugin --style tmux
-./bin/opencode-tmux tmux-config --provider plugin
+./bin/coding-agents-tmux list --provider plugin
+./bin/coding-agents-tmux list --agent codex
+./bin/coding-agents-tmux list --agent pi
+./bin/coding-agents-tmux list --provider plugin --waiting
+./bin/coding-agents-tmux inspect <target> --provider plugin
+./bin/coding-agents-tmux status --provider plugin --style tmux
+./bin/coding-agents-tmux tmux-config --provider plugin
 ```
+
+The legacy `./bin/opencode-tmux` alias still works for now during the rename transition.

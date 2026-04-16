@@ -1,3 +1,4 @@
+import { getEnvAliasValue } from "../naming.ts";
 import type { InspectResult, PaneRuntimeSummary } from "../types.ts";
 
 type StatusStyle = "plain" | "tmux";
@@ -5,16 +6,36 @@ type StatusStyle = "plain" | "tmux";
 type StatusTone = "neutral" | "busy" | "waiting" | "idle" | "unknown";
 
 const statusToneColors: Record<StatusTone, string> = {
-  neutral: process.env.OPENCODE_TMUX_STATUS_COLOR_NEUTRAL ?? "colour252",
-  busy: process.env.OPENCODE_TMUX_STATUS_COLOR_BUSY ?? "colour220",
-  waiting: process.env.OPENCODE_TMUX_STATUS_COLOR_WAITING ?? "colour196",
-  idle: process.env.OPENCODE_TMUX_STATUS_COLOR_IDLE ?? "colour70",
-  unknown: process.env.OPENCODE_TMUX_STATUS_COLOR_UNKNOWN ?? "colour244",
+  neutral:
+    getEnvAliasValue(
+      "CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL",
+      "OPENCODE_TMUX_STATUS_COLOR_NEUTRAL",
+    ) ?? "colour252",
+  busy:
+    getEnvAliasValue("CODING_AGENTS_TMUX_STATUS_COLOR_BUSY", "OPENCODE_TMUX_STATUS_COLOR_BUSY") ??
+    "colour220",
+  waiting:
+    getEnvAliasValue(
+      "CODING_AGENTS_TMUX_STATUS_COLOR_WAITING",
+      "OPENCODE_TMUX_STATUS_COLOR_WAITING",
+    ) ?? "colour196",
+  idle:
+    getEnvAliasValue("CODING_AGENTS_TMUX_STATUS_COLOR_IDLE", "OPENCODE_TMUX_STATUS_COLOR_IDLE") ??
+    "colour70",
+  unknown:
+    getEnvAliasValue(
+      "CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN",
+      "OPENCODE_TMUX_STATUS_COLOR_UNKNOWN",
+    ) ?? "colour244",
 };
 
-const statusPrefix = process.env.OPENCODE_TMUX_STATUS_PREFIX ?? "󰚩";
+const statusPrefix =
+  getEnvAliasValue("CODING_AGENTS_TMUX_STATUS_PREFIX", "OPENCODE_TMUX_STATUS_PREFIX") ?? "󰚩";
 const statusShowPrefix = !["0", "false", "no", "off"].includes(
-  (process.env.OPENCODE_TMUX_STATUS_SHOW_PREFIX ?? "on").toLowerCase(),
+  (
+    getEnvAliasValue("CODING_AGENTS_TMUX_STATUS_SHOW_PREFIX", "OPENCODE_TMUX_STATUS_SHOW_PREFIX") ??
+    "on"
+  ).toLowerCase(),
 );
 
 const columns = [

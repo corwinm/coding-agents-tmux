@@ -3,10 +3,10 @@
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLI="$CURRENT_DIR/bin/opencode-tmux"
+CLI="$CURRENT_DIR/bin/coding-agents-tmux"
 
 if [ ! -f "$CLI" ]; then
-  printf 'opencode-tmux: missing CLI at %s\n' "$CLI" >&2
+  printf 'coding-agents-tmux: missing CLI at %s\n' "$CLI" >&2
   exit 1
 fi
 

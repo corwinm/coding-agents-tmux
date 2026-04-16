@@ -3,8 +3,8 @@
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_DIR="${OPENCODE_TMUX_PLUGIN_DIR:-$HOME/.tmux/plugins/opencode-tmux}"
-TMUX_CONF="${OPENCODE_TMUX_TMUX_CONF:-$HOME/.tmux.conf}"
+TARGET_DIR="${CODING_AGENTS_TMUX_PLUGIN_DIR:-${OPENCODE_TMUX_PLUGIN_DIR:-$HOME/.tmux/plugins/coding-agents-tmux}}"
+TMUX_CONF="${CODING_AGENTS_TMUX_TMUX_CONF:-${OPENCODE_TMUX_TMUX_CONF:-$HOME/.tmux.conf}}"
 RELOAD=0
 BOOTSTRAP=0
 
@@ -22,7 +22,7 @@ usage() {
 
 run_bootstrap() {
   if ! command -v npm >/dev/null 2>&1; then
-    printf 'opencode-tmux: npm is required for --bootstrap\n' >&2
+    printf 'coding-agents-tmux: npm is required for --bootstrap\n' >&2
     exit 1
   fi
 
@@ -34,20 +34,24 @@ run_bootstrap() {
 }
 
 reload_tmux() {
-  local plugin_entrypoint="$TARGET_DIR/opencode-tmux.tmux"
+  local plugin_entrypoint="$TARGET_DIR/coding-agents-tmux.tmux"
+
+  if [ ! -f "$plugin_entrypoint" ]; then
+    plugin_entrypoint="$TARGET_DIR/opencode-tmux.tmux"
+  fi
 
   if ! command -v tmux >/dev/null 2>&1; then
-    printf 'opencode-tmux: tmux is not installed; skipping reload\n'
+    printf 'coding-agents-tmux: tmux is not installed; skipping reload\n'
     return
   fi
 
   if ! tmux ls >/dev/null 2>&1; then
-    printf 'opencode-tmux: no tmux server is running; skipping reload\n'
+    printf 'coding-agents-tmux: no tmux server is running; skipping reload\n'
     return
   fi
 
   if [ ! -f "$TMUX_CONF" ]; then
-    printf 'opencode-tmux: tmux config not found at %s; skipping reload\n' "$TMUX_CONF"
+    printf 'coding-agents-tmux: tmux config not found at %s; skipping reload\n' "$TMUX_CONF"
     return
   fi
 
@@ -65,7 +69,7 @@ while [ "$#" -gt 0 ]; do
   --target)
     shift
     if [ "$#" -eq 0 ]; then
-      printf 'opencode-tmux: --target requires a value\n' >&2
+      printf 'coding-agents-tmux: --target requires a value\n' >&2
       exit 1
     fi
     TARGET_DIR="$1"
@@ -81,7 +85,7 @@ while [ "$#" -gt 0 ]; do
     exit 0
     ;;
   *)
-    printf 'opencode-tmux: unknown argument: %s\n' "$1" >&2
+    printf 'coding-agents-tmux: unknown argument: %s\n' "$1" >&2
     usage >&2
     exit 1
     ;;
@@ -90,7 +94,7 @@ while [ "$#" -gt 0 ]; do
 done
 
 if ! command -v rsync >/dev/null 2>&1; then
-  printf 'opencode-tmux: rsync is required to sync the plugin checkout\n' >&2
+  printf 'coding-agents-tmux: rsync is required to sync the plugin checkout\n' >&2
   exit 1
 fi
 

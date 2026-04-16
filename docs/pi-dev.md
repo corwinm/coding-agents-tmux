@@ -1,5 +1,8 @@
 # Pi.dev support: research and implementation plan
 
+> Note: this implementation plan was written during the rename from `opencode-tmux` to `coding-agents-tmux`.
+> Legacy names mentioned below refer to temporary compatibility aliases unless explicitly called out as historical context.
+
 ## Issue
 
 GitHub issue: `#2` — **Add support for Pi.dev**
@@ -56,7 +59,7 @@ Issue notes:
 
 - [x] Create a bundled Pi extension file under `plugin/`
 - [x] Resolve `TMUX_PANE` to tmux target from inside the extension
-- [x] Persist normalized Pi state files under an `opencode-tmux` state directory
+- [x] Persist normalized Pi state files under a `coding-agents-tmux` state directory
 - [x] Map Pi lifecycle events to minimal normalized states
 - [x] Add conservative best-effort waiting-input detection
 
@@ -76,7 +79,7 @@ Issue notes:
 
 #### 6. tmux plugin integration
 
-- [x] Add install/update logic for the bundled Pi extension in `opencode-tmux.tmux`
+- [x] Add install/update logic for the bundled Pi extension in `coding-agents-tmux.tmux`
 - [x] Add a tmux option for enabling/disabling Pi extension installation
 - [x] Surface a helpful message telling users to restart Pi sessions after install
 - [x] Decide on the final install path under `~/.pi/agent/extensions/`
@@ -111,13 +114,13 @@ Use this section to record implementation progress as work lands.
 - 2026-04-14: Researched the repo and Pi docs; wrote the initial Pi support plan and task list.
 - 2026-04-14: Completed task group 1. Pi is now a first-class internal agent kind, runtime dispatch has an explicit Pi path, `src/core/pi.ts` exists as the new Pi runtime module entry point, and the full test suite passed.
 - 2026-04-14: Completed task group 2. Pi panes are now detected from tmux command/title signals, `--agent pi` is supported by CLI filtering, and test coverage was added in `test/tmux.test.ts`, `test/render.test.ts`, and `test/cli.test.ts`.
-- 2026-04-14: Completed task group 3. Added the bundled Pi extension at `plugin/pi-tmux.ts`; it resolves `TMUX_PANE`, writes normalized state files under `~/.local/state/opencode-tmux/pi-state` (or `OPENCODE_TMUX_PI_STATE_DIR`), tracks `session_start`/`agent_start`/`turn_start`/`agent_end`, and does conservative waiting-input detection.
+- 2026-04-14: Completed task group 3. Added the bundled Pi extension at `plugin/pi-tmux.ts`; it resolves `TMUX_PANE`, writes normalized state files under `~/.local/state/coding-agents-tmux/pi-state` (or `CODING_AGENTS_TMUX_PI_STATE_DIR`, with `OPENCODE_TMUX_PI_STATE_DIR` kept as a temporary alias), tracks `session_start`/`agent_start`/`turn_start`/`agent_end`, and does conservative waiting-input detection.
 - 2026-04-14: Completed task group 4. `src/core/pi.ts` now reads Pi state files from disk, matches them by target, pane id, and safe cwd fallback, and converts matched state into normalized `RuntimeInfo` with Pi-specific provider/source metadata.
 - 2026-04-14: Completed task group 5. Pi now has preview-based waiting-input classification plus a coarse `pi-command` fallback, and focused runtime coverage was added in `test/pi.test.ts`.
-- 2026-04-14: Completed task group 6. `opencode-tmux.tmux` now installs the bundled Pi extension from `plugin/pi-tmux.ts` into `~/.pi/agent/extensions/opencode-tmux/index.ts` (or `PI_CODING_AGENT_DIR`), controlled by `@opencode-tmux-install-pi-extension`, and prompts the user to restart Pi sessions when the installed link changes.
+- 2026-04-14: Completed task group 6. `coding-agents-tmux.tmux` now installs the bundled Pi extension from `plugin/pi-tmux.ts` into `~/.pi/agent/extensions/coding-agents-tmux/index.ts` (or `PI_CODING_AGENT_DIR`), while also creating the legacy `opencode-tmux` compatibility link during the transition; the install is controlled by `@coding-agents-tmux-install-pi-extension`, with the legacy tmux option name still accepted for now.
 - 2026-04-14: Completed task group 7. CLI agent help/validation now includes Pi, mixed-agent popup/menu defaults use `Coding Agent Sessions`, and Pi panes are verified in the core CLI flows.
 - 2026-04-14: Completed task group 8. Added `test/pi.test.ts` for Pi state matching and fallback behavior, expanded CLI and render coverage for Pi and mixed-agent cases, and re-ran the full test suite plus `tsc --noEmit` cleanly.
-- 2026-04-14: Completed task group 9. Updated `README.md` with Pi support details, the bundled Pi extension install path and state directory, the new `@opencode-tmux-install-pi-extension` option, and Pi fallback behavior/limitations.
+- 2026-04-14: Completed task group 9. Updated `README.md` with Pi support details, the bundled Pi extension install path and state directory, the new `@coding-agents-tmux-install-pi-extension` option, and Pi fallback behavior/limitations.
 
 ## Research summary
 
@@ -128,7 +131,7 @@ The codebase already has two distinct support paths:
 - **OpenCode**
   - pane detection in `src/core/tmux.ts`
   - runtime state in `src/core/opencode.ts`
-  - richer local state via bundled OpenCode plugin in `plugin/opencode-tmux.ts`
+  - richer local state via bundled OpenCode plugin in `plugin/coding-agents-tmux.ts`
 - **Codex**
   - pane detection in `src/core/tmux.ts`
   - runtime state in `src/core/opencode.ts`
@@ -198,7 +201,7 @@ The examples confirm that both of the following are extension-driven patterns, n
 - **plan mode**
   - example: `examples/extensions/plan-mode/`
 
-That matches the GitHub issue statement. For `opencode-tmux`, this means:
+That matches the GitHub issue statement. For `coding-agents-tmux`, this means:
 
 - we should **not** design v1 around permission-specific states
 - we should **not** assume a stable plan-mode UI exists in every Pi session
@@ -367,14 +370,14 @@ Unlike OpenCode, Pi already has a distinct CLI binary name. That makes pane disc
 
 Suggested new bundled extension file, e.g.:
 
-- `plugin/pi/opencode-tmux-pi.ts`
+- `plugin/pi/coding-agents-tmux-pi.ts`
 - or `plugin/pi-tmux.ts`
 
 #### Extension responsibilities
 
 On Pi lifecycle events, write normalized JSON state files under a dedicated state dir, for example:
 
-- `~/.local/state/opencode-tmux/pi-state`
+- `~/.local/state/coding-agents-tmux/pi-state`
 
 State shape should mirror the existing normalized patterns already used in this repo:
 
@@ -419,7 +422,7 @@ Keep this intentionally simple in v1:
 
 Do **not** attempt to detect permission requests or plan-mode prompts specially in v1.
 
-### Phase 4: read Pi extension state in `opencode-tmux`
+### Phase 4: read Pi extension state in `coding-agents-tmux`
 
 #### New file
 
@@ -469,7 +472,7 @@ For Pi, `pi` staying as the foreground pane command is at least enough to prove 
 
 #### Files
 
-- `opencode-tmux.tmux`
+- `coding-agents-tmux.tmux`
 - maybe helper scripts if needed
 - `README.md`
 
@@ -482,11 +485,11 @@ Add a Pi install step similar in spirit to:
 
 Suggested tmux option:
 
-- `@opencode-tmux-install-pi-extension 'on' | 'off'`
+- `@coding-agents-tmux-install-pi-extension 'on' | 'off'`
 
 Suggested install target:
 
-- `~/.pi/agent/extensions/opencode-tmux.ts`
+- `~/.pi/agent/extensions/coding-agents-tmux.ts`
   - or a namespaced subdirectory under `~/.pi/agent/extensions/`
 
 #### Notes
@@ -504,7 +507,7 @@ The tmux plugin should:
 
 - `src/cli.ts`
 - `src/cli/render.ts`
-- `opencode-tmux.tmux`
+- `coding-agents-tmux.tmux`
 - `scripts/tmux-menu-switch.sh`
 - `README.md`
 

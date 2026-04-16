@@ -1,9 +1,9 @@
-# opencode-tmux Tasks
+# coding-agents-tmux Tasks
 
 ## Milestone 1: Project Bootstrap
 
 - Initialize a Node 24 + TypeScript project.
-- Add a CLI entrypoint for `opencode-tmux`.
+- Add a CLI entrypoint for `coding-agents-tmux`.
 - Set up basic source structure for `core`, `providers`, and `cli` modules.
 - Add linting, formatting, and a minimal test setup if appropriate.
 
@@ -17,7 +17,7 @@
 
 ## Milestone 3: CLI `list`
 
-- Implement `opencode-tmux list`.
+- Implement `coding-agents-tmux list`.
 - Render a readable default table output.
 - Add `--json` output.
 - Include target id, title, cwd, and preliminary detection info.
@@ -36,7 +36,7 @@
 
 ## Milestone 5: CLI `inspect`
 
-- Implement `opencode-tmux inspect <target>`.
+- Implement `coding-agents-tmux inspect <target>`.
 - Show the raw pane metadata used for detection.
 - Show the mapped opencode session details.
 - Show the raw signals used to produce the normalized status.
@@ -44,8 +44,8 @@
 
 ## Milestone 6: CLI `switch`
 
-- Implement `opencode-tmux switch <target>`.
-- Implement interactive `opencode-tmux switch` without a target.
+- Implement `coding-agents-tmux switch <target>`.
+- Implement interactive `coding-agents-tmux switch` without a target.
 - Reuse list data so the chooser includes status and labels.
 - Support switching the current tmux client to the selected pane or window.
 

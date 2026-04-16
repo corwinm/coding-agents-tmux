@@ -10,6 +10,12 @@ import {
 } from "./codex.ts";
 import { attachRuntimeWithPi } from "./pi.ts";
 import { capturePanePreview } from "./tmux.ts";
+import {
+  PRIMARY_CLI_NAME,
+  getEnvAliasValue,
+  getPreferredStateDir,
+  getStateDirCandidates,
+} from "../naming.ts";
 import type {
   CodexRuntimeDebug,
   DiscoveredPane,
@@ -144,13 +150,11 @@ function getOpencodeDbPath(): string {
 }
 
 function getPluginStateDir(): string {
-  const stateHome =
-    process.env.OPENCODE_TMUX_STATE_DIR ??
-    process.env.XDG_STATE_HOME ??
-    join(homedir(), ".local", "state");
-  return process.env.OPENCODE_TMUX_STATE_DIR
-    ? stateHome
-    : join(stateHome, "opencode-tmux", "plugin-state");
+  return getPreferredStateDir({
+    preferredEnv: "CODING_AGENTS_TMUX_STATE_DIR",
+    legacyEnv: "OPENCODE_TMUX_STATE_DIR",
+    subdirectory: "plugin-state",
+  });
 }
 
 async function loadSqliteDatabaseConstructor(): Promise<SqliteDatabaseConstructor> {
@@ -306,23 +310,25 @@ function toPluginSessionMatch(state: PluginStateFile): SessionMatch | null {
 }
 
 function readPluginStates(): PluginStateFile[] {
-  const stateDir = getPluginStateDir();
-
-  if (!existsSync(stateDir)) {
-    return [];
-  }
-
-  return readdirSync(stateDir)
-    .filter((entry) => entry.endsWith(".json"))
-    .map((entry) => join(stateDir, entry))
-    .map((filePath) => {
-      try {
-        return JSON.parse(readFileSync(filePath, "utf8")) as PluginStateFile;
-      } catch {
-        return null;
-      }
-    })
-    .filter((state): state is PluginStateFile => Boolean(state?.directory));
+  return getStateDirCandidates({
+    preferredEnv: "CODING_AGENTS_TMUX_STATE_DIR",
+    legacyEnv: "OPENCODE_TMUX_STATE_DIR",
+    subdirectory: "plugin-state",
+  })
+    .filter((stateDir) => existsSync(stateDir))
+    .flatMap((stateDir) =>
+      readdirSync(stateDir)
+        .filter((entry) => entry.endsWith(".json"))
+        .map((entry) => join(stateDir, entry))
+        .map((filePath) => {
+          try {
+            return JSON.parse(readFileSync(filePath, "utf8")) as PluginStateFile;
+          } catch {
+            return null;
+          }
+        })
+        .filter((state): state is PluginStateFile => Boolean(state?.directory)),
+    );
 }
 
 function buildPluginStateIndex(): PluginStateIndex {
@@ -747,8 +753,7 @@ function normalizeServerMapSource(value: string | undefined): string | null {
     return value.trim();
   }
 
-  const envValue = process.env.OPENCODE_TMUX_SERVER_MAP;
-  return envValue && envValue.trim() ? envValue.trim() : null;
+  return getEnvAliasValue("CODING_AGENTS_TMUX_SERVER_MAP", "OPENCODE_TMUX_SERVER_MAP") ?? null;
 }
 
 function parseServerMap(value: string | undefined): Record<string, string> {
@@ -1206,7 +1211,10 @@ function classifyCodexPreview(
 }
 
 function getCodexBusyGraceMs(): number {
-  const value = process.env.OPENCODE_TMUX_CODEX_BUSY_GRACE_MS;
+  const value = getEnvAliasValue(
+    "CODING_AGENTS_TMUX_CODEX_BUSY_GRACE_MS",
+    "OPENCODE_TMUX_CODEX_BUSY_GRACE_MS",
+  );
 
   if (!value) {
     return 3000;
@@ -1515,17 +1523,17 @@ export function getRuntimeProviderHelpText(): string {
     "",
     "Plugin state:",
     `  Default path: ${getPluginStateDir()}`,
-    "  Override with OPENCODE_TMUX_STATE_DIR.",
+    "  Override with CODING_AGENTS_TMUX_STATE_DIR or OPENCODE_TMUX_STATE_DIR.",
     "",
     "Codex hook state:",
     `  Default path: ${getCodexStateDir()}`,
-    "  Override with OPENCODE_TMUX_CODEX_STATE_DIR.",
-    "  Generate hooks.json with: opencode-tmux codex-hooks-template",
+    "  Override with CODING_AGENTS_TMUX_CODEX_STATE_DIR or OPENCODE_TMUX_CODEX_STATE_DIR.",
+    `  Generate hooks.json with: ${PRIMARY_CLI_NAME} codex-hooks-template`,
     "",
     "Server map:",
     "  Pass --server-map with a JSON object or a path to a JSON file.",
-    '  Example: {"opencode-tmux:1.2":"http://127.0.0.1:4096"}',
-    "  You can also set OPENCODE_TMUX_SERVER_MAP with the same value.",
+    '  Example: {"work:1.2":"http://127.0.0.1:4096"}',
+    "  You can also set CODING_AGENTS_TMUX_SERVER_MAP or OPENCODE_TMUX_SERVER_MAP with the same value.",
   ].join("\n");
 }
 

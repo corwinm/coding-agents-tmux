@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
+import { getPreferredStateDir, getStateDirCandidates } from "../naming.ts";
 import { runCommand } from "../runtime.ts";
 import type { RuntimeInfo, RuntimeStatus } from "../types.ts";
 
@@ -62,14 +63,11 @@ function normalizeEnvValue(value: string | undefined): string | null {
 }
 
 export function getCodexStateDir(): string {
-  const stateHome =
-    process.env.OPENCODE_TMUX_CODEX_STATE_DIR ??
-    process.env.XDG_STATE_HOME ??
-    join(homedir(), ".local", "state");
-
-  return process.env.OPENCODE_TMUX_CODEX_STATE_DIR
-    ? stateHome
-    : join(stateHome, "opencode-tmux", "codex-state");
+  return getPreferredStateDir({
+    preferredEnv: "CODING_AGENTS_TMUX_CODEX_STATE_DIR",
+    legacyEnv: "OPENCODE_TMUX_CODEX_STATE_DIR",
+    subdirectory: "codex-state",
+  });
 }
 
 export function getCodexHome(): string {
@@ -285,17 +283,19 @@ export async function persistCodexHookState(rawInput: string): Promise<void> {
 }
 
 export function readCodexStateEntries(): CodexStateEntry[] {
-  const stateDir = getCodexStateDir();
-
-  if (!existsSync(stateDir)) {
-    return [];
-  }
-
-  return readdirSync(stateDir)
-    .filter((entry) => entry.endsWith(".json"))
-    .map((entry) => join(stateDir, entry))
-    .map((filePath) => ({ filePath, state: readStateFile(filePath) }))
-    .filter((entry): entry is CodexStateEntry => Boolean(entry.state?.directory));
+  return getStateDirCandidates({
+    preferredEnv: "CODING_AGENTS_TMUX_CODEX_STATE_DIR",
+    legacyEnv: "OPENCODE_TMUX_CODEX_STATE_DIR",
+    subdirectory: "codex-state",
+  })
+    .filter((stateDir) => existsSync(stateDir))
+    .flatMap((stateDir) =>
+      readdirSync(stateDir)
+        .filter((entry) => entry.endsWith(".json"))
+        .map((entry) => join(stateDir, entry))
+        .map((filePath) => ({ filePath, state: readStateFile(filePath) }))
+        .filter((entry): entry is CodexStateEntry => Boolean(entry.state?.directory)),
+    );
 }
 
 export function readCodexStates(): CodexStateFile[] {

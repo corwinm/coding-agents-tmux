@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -128,6 +128,75 @@ test("persistCodexHookState classifies multiple-choice prompts as waiting-questi
 
     assert.equal(states[0]?.status, "waiting-question");
     assert.equal(states[0]?.detail, "Codex is waiting for a multiple-choice response");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("readCodexStates supports new env aliases and both default state roots", () => {
+  const preferredStateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
+  writeFileSync(
+    join(preferredStateDir, "preferred.json"),
+    JSON.stringify({
+      version: 1,
+      target: "work:1.0",
+      directory: "/tmp/codex-preferred",
+      title: "Preferred Codex Session",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    }),
+  );
+  const explicitEnvRestore = setEnv({
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: preferredStateDir,
+    OPENCODE_TMUX_CODEX_STATE_DIR: undefined,
+  });
+
+  try {
+    assert.equal(readCodexStates()[0]?.title, "Preferred Codex Session");
+  } finally {
+    explicitEnvRestore();
+  }
+
+  const stateHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-home-"));
+  const preferredRoot = join(stateHome, "coding-agents-tmux", "codex-state");
+  const legacyRoot = join(stateHome, "opencode-tmux", "codex-state");
+  mkdirSync(preferredRoot, { recursive: true });
+  mkdirSync(legacyRoot, { recursive: true });
+  writeFileSync(
+    join(preferredRoot, "preferred.json"),
+    JSON.stringify({
+      version: 1,
+      target: "work:1.1",
+      directory: "/tmp/codex-root-preferred",
+      title: "Preferred Root Codex Session",
+      status: "running",
+      activity: "busy",
+      updatedAt: 200,
+    }),
+  );
+  writeFileSync(
+    join(legacyRoot, "legacy.json"),
+    JSON.stringify({
+      version: 1,
+      target: "work:1.2",
+      directory: "/tmp/codex-root-legacy",
+      title: "Legacy Root Codex Session",
+      status: "waiting-input",
+      activity: "busy",
+      updatedAt: 300,
+    }),
+  );
+  const restoreEnv = setEnv({
+    XDG_STATE_HOME: stateHome,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: undefined,
+    OPENCODE_TMUX_CODEX_STATE_DIR: undefined,
+  });
+
+  try {
+    const titles = readCodexStates().map((state) => state.title);
+
+    assert.deepEqual(titles, ["Preferred Root Codex Session", "Legacy Root Codex Session"]);
   } finally {
     restoreEnv();
   }

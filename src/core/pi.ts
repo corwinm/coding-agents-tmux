@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { capturePanePreview } from "./tmux.ts";
+import { getPreferredStateDir, getStateDirCandidates } from "../naming.ts";
 import type {
   DiscoveredPane,
   PaneRuntimeSummary,
@@ -69,34 +69,33 @@ function pickNewerPiState(current: PiStateFile | undefined, candidate: PiStateFi
 }
 
 export function getPiStateDir(): string {
-  const stateHome =
-    process.env.OPENCODE_TMUX_PI_STATE_DIR ??
-    process.env.XDG_STATE_HOME ??
-    join(homedir(), ".local", "state");
-
-  return process.env.OPENCODE_TMUX_PI_STATE_DIR
-    ? stateHome
-    : join(stateHome, "opencode-tmux", "pi-state");
+  return getPreferredStateDir({
+    preferredEnv: "CODING_AGENTS_TMUX_PI_STATE_DIR",
+    legacyEnv: "OPENCODE_TMUX_PI_STATE_DIR",
+    subdirectory: "pi-state",
+  });
 }
 
 function readPiStates(): PiStateFile[] {
-  const stateDir = getPiStateDir();
-
-  if (!existsSync(stateDir)) {
-    return [];
-  }
-
-  return readdirSync(stateDir)
-    .filter((entry) => entry.endsWith(".json"))
-    .map((entry) => join(stateDir, entry))
-    .map((filePath) => {
-      try {
-        return JSON.parse(readFileSync(filePath, "utf8")) as PiStateFile;
-      } catch {
-        return null;
-      }
-    })
-    .filter((state): state is PiStateFile => Boolean(state?.directory));
+  return getStateDirCandidates({
+    preferredEnv: "CODING_AGENTS_TMUX_PI_STATE_DIR",
+    legacyEnv: "OPENCODE_TMUX_PI_STATE_DIR",
+    subdirectory: "pi-state",
+  })
+    .filter((stateDir) => existsSync(stateDir))
+    .flatMap((stateDir) =>
+      readdirSync(stateDir)
+        .filter((entry) => entry.endsWith(".json"))
+        .map((entry) => join(stateDir, entry))
+        .map((filePath) => {
+          try {
+            return JSON.parse(readFileSync(filePath, "utf8")) as PiStateFile;
+          } catch {
+            return null;
+          }
+        })
+        .filter((state): state is PiStateFile => Boolean(state?.directory)),
+    );
 }
 
 function buildPiStateIndex(states = readPiStates()): PiStateIndex {

@@ -474,6 +474,19 @@ test("describeServerMapInput falls back to env when no explicit value is provide
   }
 });
 
+test("describeServerMapInput prefers the new CODING_AGENTS_TMUX_SERVER_MAP alias", () => {
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_SERVER_MAP: '{"work:1.2":"http://127.0.0.1:5096"}',
+    OPENCODE_TMUX_SERVER_MAP: '{"work:1.0":"http://127.0.0.1:4096"}',
+  });
+
+  try {
+    assert.equal(describeServerMapInput(undefined), '{"work:1.2":"http://127.0.0.1:5096"}');
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("server provider rejects non-object maps", async () => {
   await assert.rejects(
     attachRuntimeToPanes([createDiscoveredPane()], { provider: "server", serverMap: "[]" }),
@@ -494,11 +507,92 @@ test("runtime provider helpers expose provider docs, template output, and valida
   });
   assert.match(helpText, /Runtime providers:/);
   assert.match(helpText, /plugin  Use opencode plugin state files only/);
+  assert.match(helpText, /Override with CODING_AGENTS_TMUX_STATE_DIR or OPENCODE_TMUX_STATE_DIR/);
+  assert.match(helpText, /Generate hooks\.json with: coding-agents-tmux codex-hooks-template/);
+  assert.match(helpText, /CODING_AGENTS_TMUX_SERVER_MAP or OPENCODE_TMUX_SERVER_MAP/);
   assert.match(helpText, /Codex hook state:/);
   await assert.rejects(
     attachRuntimeToPanes([createDiscoveredPane()], { provider: "bogus" as never }),
     /invalid runtime provider: bogus/,
   );
+});
+
+test("plugin state supports new env aliases and both default state roots", async () => {
+  const preferredStateDir = createPluginStateDir([
+    {
+      target: "work:1.0",
+      directory: "/tmp/preferred-project",
+      title: "Preferred Plugin Session",
+      status: "running",
+      activity: "busy",
+      updatedAt: 200,
+    },
+  ]);
+  const explicitEnvRestore = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: preferredStateDir,
+    OPENCODE_TMUX_STATE_DIR: undefined,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes(
+      [createDiscoveredPane({ target: "work:1.0", currentPath: "/tmp/preferred-project" })],
+      { provider: "plugin" },
+    );
+
+    assert.equal(getRuntime(getSummary(summaries, 0)).status, "running");
+    assert.equal(getRuntime(getSummary(summaries, 0)).session?.title, "Preferred Plugin Session");
+  } finally {
+    explicitEnvRestore();
+  }
+
+  const stateHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-state-home-"));
+  const preferredRoot = join(stateHome, "coding-agents-tmux", "plugin-state");
+  const legacyRoot = join(stateHome, "opencode-tmux", "plugin-state");
+  mkdirSync(preferredRoot, { recursive: true });
+  mkdirSync(legacyRoot, { recursive: true });
+  writeFileSync(
+    join(preferredRoot, "preferred.json"),
+    JSON.stringify({
+      target: "work:1.1",
+      directory: "/tmp/preferred-root",
+      title: "Preferred Root Session",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 300,
+    }),
+  );
+  writeFileSync(
+    join(legacyRoot, "legacy.json"),
+    JSON.stringify({
+      target: "work:1.2",
+      directory: "/tmp/legacy-root",
+      title: "Legacy Root Session",
+      status: "waiting-input",
+      activity: "busy",
+      updatedAt: 400,
+    }),
+  );
+  const restoreEnv = setEnv({
+    XDG_STATE_HOME: stateHome,
+    CODING_AGENTS_TMUX_STATE_DIR: undefined,
+    OPENCODE_TMUX_STATE_DIR: undefined,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes(
+      [
+        createDiscoveredPane({ target: "work:1.1", currentPath: "/tmp/preferred-root" }),
+        createDiscoveredPane({ target: "work:1.2", currentPath: "/tmp/legacy-root", paneIndex: 2 }),
+      ],
+      { provider: "plugin" },
+    );
+
+    assert.equal(getRuntime(getSummary(summaries, 0)).session?.title, "Preferred Root Session");
+    assert.equal(getRuntime(getSummary(summaries, 1)).session?.title, "Legacy Root Session");
+    assert.equal(getRuntime(getSummary(summaries, 1)).status, "waiting-input");
+  } finally {
+    restoreEnv();
+  }
 });
 
 test("codex panes use a coarse command-backed runtime classification", async () => {

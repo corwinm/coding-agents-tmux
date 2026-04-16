@@ -1,8 +1,8 @@
-# opencode-tmux Plan
+# coding-agents-tmux Plan
 
 ## Goal
 
-Build a TypeScript tool that runs on Node 24 and helps track and navigate `opencode` instances running inside `tmux`.
+Build a TypeScript tool that runs on Node 24 and helps track and navigate terminal coding-agent sessions running inside `tmux`.
 
 The first version should be a standalone CLI. Later versions should add tmux-native UI surfaces while reusing the same core logic.
 
@@ -87,11 +87,11 @@ Responsibilities:
 
 Build a standalone CLI with these commands:
 
-- `opencode-tmux list`
-- `opencode-tmux list --json`
-- `opencode-tmux switch`
-- `opencode-tmux switch <target>`
-- `opencode-tmux inspect <target>`
+- `coding-agents-tmux list`
+- `coding-agents-tmux list --json`
+- `coding-agents-tmux switch`
+- `coding-agents-tmux switch <target>`
+- `coding-agents-tmux inspect <target>`
 
 Initial behavior:
 

@@ -6,6 +6,7 @@ import { format } from "@wasm-fmt/shfmt/node";
 
 const repoRoot = path.resolve(import.meta.dirname, "..");
 const defaultFiles = [
+  "bin/coding-agents-tmux",
   "bin/opencode-tmux",
   "scripts/sync-tmux-plugin.sh",
   "scripts/tmux-menu-switch.sh",

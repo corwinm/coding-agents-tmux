@@ -407,10 +407,10 @@ test("renderSwitchChoices shows empty state and status summary honors custom tmu
   assert.equal(renderSwitchChoices([]), "No likely coding agent tmux panes found.");
 
   const restoreEnv = setEnv({
-    OPENCODE_TMUX_STATUS_PREFIX: "OC",
-    OPENCODE_TMUX_STATUS_COLOR_NEUTRAL: "colour33",
-    OPENCODE_TMUX_STATUS_COLOR_BUSY: "colour220",
-    OPENCODE_TMUX_STATUS_COLOR_UNKNOWN: "colour244",
+    CODING_AGENTS_TMUX_STATUS_PREFIX: "OC",
+    CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL: "colour33",
+    CODING_AGENTS_TMUX_STATUS_COLOR_BUSY: "colour220",
+    CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN: "colour244",
   });
 
   try {
@@ -438,7 +438,7 @@ test("renderSwitchChoices shows empty state and status summary honors custom tmu
 });
 
 test("renderStatusSummary honors the prefix toggle when reloaded with env overrides", async () => {
-  const restoreEnv = setEnv({ OPENCODE_TMUX_STATUS_SHOW_PREFIX: "off" });
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATUS_SHOW_PREFIX: "off" });
 
   try {
     const moduleUrl = new URL(`../src/cli/render.ts?prefix-off=${Date.now()}`, import.meta.url);

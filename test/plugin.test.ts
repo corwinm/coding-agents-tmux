@@ -39,6 +39,10 @@ function readOnlyStateFile(stateDir: string): Record<string, unknown> {
 }
 
 async function loadPlugin() {
+  return import(`../plugin/coding-agents-tmux.ts?test=${Math.random()}`);
+}
+
+async function loadLegacyPluginAlias() {
   return import(`../plugin/opencode-tmux.ts?test=${Math.random()}`);
 }
 
@@ -51,8 +55,8 @@ test("plugin preserves waiting state for ambiguous session.status heartbeats", a
   });
 
   try {
-    const { OpencodeTmuxPlugin } = await loadPlugin();
-    const plugin = await OpencodeTmuxPlugin({
+    const { CodingAgentsTmuxPlugin } = await loadPlugin();
+    const plugin = await CodingAgentsTmuxPlugin({
       directory: "/tmp/project",
       project: { name: "Project" },
       client: { app: { log: async () => null } },
@@ -70,6 +74,60 @@ test("plugin preserves waiting state for ambiguous session.status heartbeats", a
   }
 });
 
+test("plugin supports CODING_AGENTS_TMUX_STATE_DIR as a state dir alias", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: stateDir,
+    OPENCODE_TMUX_STATE_DIR: undefined,
+    TMUX: undefined,
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    const { CodingAgentsTmuxPlugin } = await loadPlugin();
+    const plugin = await CodingAgentsTmuxPlugin({
+      directory: "/tmp/project",
+      project: { name: "Project" },
+      client: { app: { log: async () => null } },
+    });
+
+    await plugin.event({ event: { type: "session.idle", timeUpdated: 100 } });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "idle");
+    assert.equal(state.title, "Project");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("legacy plugin filename still re-exports the plugin", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-legacy-test-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: stateDir,
+    OPENCODE_TMUX_STATE_DIR: undefined,
+    TMUX: undefined,
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    const { OpencodeTmuxPlugin } = await loadLegacyPluginAlias();
+    const plugin = await OpencodeTmuxPlugin({
+      directory: "/tmp/project",
+      project: { name: "Project" },
+      client: { app: { log: async () => null } },
+    });
+
+    await plugin.event({ event: { type: "session.idle", timeUpdated: 100 } });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "idle");
+    assert.equal(state.title, "Project");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("plugin switches back to running when session.status explicitly reports busy after a reply", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-plugin-test-"));
   const restoreEnv = setEnv({
@@ -79,8 +137,8 @@ test("plugin switches back to running when session.status explicitly reports bus
   });
 
   try {
-    const { OpencodeTmuxPlugin } = await loadPlugin();
-    const plugin = await OpencodeTmuxPlugin({
+    const { CodingAgentsTmuxPlugin } = await loadPlugin();
+    const plugin = await CodingAgentsTmuxPlugin({
       directory: "/tmp/project",
       project: { name: "Project" },
       client: { app: { log: async () => null } },

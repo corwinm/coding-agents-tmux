@@ -124,6 +124,47 @@ exit 1
   }
 });
 
+test("Pi plugin supports CODING_AGENTS_TMUX_PI_STATE_DIR as a state dir alias", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
+    OPENCODE_TMUX_PI_STATE_DIR: undefined,
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    const { default: installPiPlugin } = await loadPiPlugin();
+    const handlers = new Map<PiPluginEventName, PiPluginHandler>();
+
+    installPiPlugin({
+      getSessionName: () => "Pi Session",
+      on: (eventName: PiPluginEventName, handler: PiPluginHandler) => {
+        handlers.set(eventName, handler);
+      },
+    });
+
+    const handler = handlers.get("agent_end");
+    assert.ok(handler, "expected agent_end handler");
+
+    await handler?.(
+      {},
+      {
+        cwd: "/tmp/pi-project",
+        sessionManager: {
+          getSessionFile: () => "/tmp/pi-session.json",
+          getSessionName: () => "Pi Session",
+        },
+      },
+    );
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "idle");
+    assert.equal(state.title, "Pi Session");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("Pi plugin refreshes tmux clients after removing state on shutdown", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-pi-plugin-state-"));
   const fakeTmux = installFakeTmux(`

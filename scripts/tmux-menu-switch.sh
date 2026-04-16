@@ -3,10 +3,10 @@
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-CLI="$CURRENT_DIR/bin/opencode-tmux"
+CLI="$CURRENT_DIR/bin/coding-agents-tmux"
 
 if [ ! -f "$CLI" ]; then
-  tmux display-message "opencode-tmux: missing CLI at $CLI"
+  tmux display-message "coding-agents-tmux: missing CLI at $CLI"
   exit 0
 fi
 
@@ -82,7 +82,7 @@ while IFS= read -r line; do
 done < <("$CLI" "${LIST_ARGS[@]}")
 
 if [ "${#LINES[@]}" -eq 0 ] || [ -z "${LINES[0]}" ]; then
-  tmux display-message "opencode-tmux: no matching panes"
+  tmux display-message "coding-agents-tmux: no matching panes"
   exit 0
 fi
 
@@ -147,6 +147,6 @@ for line in "${LINES[@]}"; do
   INDEX=$((INDEX + 1))
 done
 
-MENU_CMD+=("Cancel" "q" "display-message \"opencode-tmux: cancelled\"")
+MENU_CMD+=("Cancel" "q" "display-message \"coding-agents-tmux: cancelled\"")
 
 "${MENU_CMD[@]}"

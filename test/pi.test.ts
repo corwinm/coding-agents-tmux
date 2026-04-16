@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -88,6 +88,91 @@ ${script}
 
   return { pathEntry: dir };
 }
+
+test("Pi runtime supports new env aliases and both default state roots", async () => {
+  const preferredStateDir = createPiStateDir([
+    {
+      target: "work:1.0",
+      directory: "/tmp/pi-preferred",
+      title: "Preferred Pi Session",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+  ]);
+  const explicitEnvRestore = setEnv({
+    CODING_AGENTS_TMUX_PI_STATE_DIR: preferredStateDir,
+    OPENCODE_TMUX_PI_STATE_DIR: undefined,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes(
+      [createDiscoveredPiPane({ target: "work:1.0", currentPath: "/tmp/pi-preferred" })],
+      { provider: "plugin" },
+    );
+
+    assert.equal(summaries[0]?.runtime?.session?.title, "Preferred Pi Session");
+  } finally {
+    explicitEnvRestore();
+  }
+
+  const stateHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-state-home-"));
+  const preferredRoot = join(stateHome, "coding-agents-tmux", "pi-state");
+  const legacyRoot = join(stateHome, "opencode-tmux", "pi-state");
+  mkdirSync(preferredRoot, { recursive: true });
+  mkdirSync(legacyRoot, { recursive: true });
+  writeFileSync(
+    join(preferredRoot, "preferred.json"),
+    JSON.stringify({
+      target: "work:1.1",
+      directory: "/tmp/pi-root-preferred",
+      title: "Preferred Root Pi Session",
+      status: "running",
+      activity: "busy",
+      updatedAt: 200,
+    }),
+  );
+  writeFileSync(
+    join(legacyRoot, "legacy.json"),
+    JSON.stringify({
+      target: "work:1.2",
+      directory: "/tmp/pi-root-legacy",
+      title: "Legacy Root Pi Session",
+      status: "waiting-input",
+      activity: "busy",
+      updatedAt: 300,
+    }),
+  );
+  const restoreEnv = setEnv({
+    XDG_STATE_HOME: stateHome,
+    CODING_AGENTS_TMUX_PI_STATE_DIR: undefined,
+    OPENCODE_TMUX_PI_STATE_DIR: undefined,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes(
+      [
+        createDiscoveredPiPane({
+          target: "work:1.1",
+          currentPath: "/tmp/pi-root-preferred",
+          paneIndex: 1,
+        }),
+        createDiscoveredPiPane({
+          target: "work:1.2",
+          currentPath: "/tmp/pi-root-legacy",
+          paneIndex: 2,
+        }),
+      ],
+      { provider: "plugin" },
+    );
+
+    assert.equal(summaries[0]?.runtime?.session?.title, "Preferred Root Pi Session");
+    assert.equal(summaries[1]?.runtime?.session?.title, "Legacy Root Pi Session");
+    assert.equal(summaries[1]?.runtime?.status, "waiting-input");
+  } finally {
+    restoreEnv();
+  }
+});
 
 test("Pi runtime matches panes by target, pane id, and unique cwd fallback", async () => {
   const stateDir = createPiStateDir([

@@ -1,24 +1,33 @@
 {
-  "name": "opencode-tmux",
+  "name": "coding-agents-tmux",
   "version": "0.0.1",
   "private": true,
-  "description": "CLI tooling for discovering and navigating coding agent sessions running in tmux",
+  "description": "tmux integration for terminal coding agent sessions",
+  "homepage": "https://github.com/corwinm/coding-agents-tmux",
+  "bugs": {
+    "url": "https://github.com/corwinm/coding-agents-tmux/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/corwinm/coding-agents-tmux.git"
+  },
   "bin": {
+    "coding-agents-tmux": "bin/coding-agents-tmux",
     "opencode-tmux": "bin/opencode-tmux"
   },
   "type": "module",
   "scripts": {
     "bootstrap": "npm ci --omit=dev",
     "prepare": "husky",
-    "list": "./bin/opencode-tmux list",
-    "dev": "./bin/opencode-tmux",
+    "list": "./bin/coding-agents-tmux list",
+    "dev": "./bin/coding-agents-tmux",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
-    "shell:check": "shellcheck --shell=bash bin/opencode-tmux scripts/*.sh",
+    "shell:check": "shellcheck --shell=bash bin/* scripts/*.sh",
     "shell:fmt": "node ./scripts/shfmt.mjs --write",
     "shell:fmt:check": "node ./scripts/shfmt.mjs --check",
     "test": "node --test",
-    "check": "./bin/opencode-tmux --help",
+    "check": "./bin/coding-agents-tmux --help",
     "typecheck": "tsc --project tsconfig.json",
     "sync-tmux": "./scripts/sync-tmux-plugin.sh",
     "fmt": "oxfmt .",
@@ -42,7 +51,7 @@
       "oxlint --fix --deny-warnings",
       "oxfmt"
     ],
-    "{bin/opencode-tmux,scripts/*.sh}": [
+    "{bin/*,scripts/*.sh}": [
       "node ./scripts/shfmt.mjs --write",
       "shellcheck --shell=bash"
     ],

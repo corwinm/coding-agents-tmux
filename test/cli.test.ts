@@ -25,7 +25,8 @@ import type {
   TmuxPane,
 } from "../src/types.ts";
 
-const BIN_PATH = join(process.cwd(), "bin", "opencode-tmux");
+const BIN_PATH = join(process.cwd(), "bin", "coding-agents-tmux");
+const LEGACY_BIN_PATH = join(process.cwd(), "bin", "opencode-tmux");
 
 function setEnv(updates: Record<string, string | undefined>): () => void {
   const previous = new Map<string, string | undefined>();
@@ -267,7 +268,11 @@ test("getTmuxConfigPath and updateTmuxConfig choose defaults, append, and replac
   assert.equal(getTmuxConfigPath("/tmp/custom.conf"), "/tmp/custom.conf");
   assert.equal(getTmuxConfigPath(undefined), `${homedir()}/.tmux.conf`);
 
-  const snippet = ["# >>> opencode-tmux >>>", "new config", "# <<< opencode-tmux <<<"].join("\n");
+  const snippet = [
+    "# >>> coding-agents-tmux >>>",
+    "new config",
+    "# <<< coding-agents-tmux <<<",
+  ].join("\n");
   const appended = updateTmuxConfig("set -g mouse on\n", snippet);
   const replaced = updateTmuxConfig(
     [
@@ -281,7 +286,7 @@ test("getTmuxConfigPath and updateTmuxConfig choose defaults, append, and replac
     snippet,
   );
 
-  assert.match(appended, /set -g mouse on\n\n# >>> opencode-tmux >>>/);
+  assert.match(appended, /set -g mouse on\n\n# >>> coding-agents-tmux >>>/);
   assert.doesNotMatch(replaced, /old config/);
   assert.match(replaced, /new config/);
 });
@@ -358,12 +363,19 @@ test("CLI help and tmux-config work through the entrypoint script", async () => 
   ]);
 
   assert.equal(helpResult.exitCode, 0);
-  assert.match(helpResult.stdoutText, /Usage: opencode-tmux/);
+  assert.match(helpResult.stdoutText, /Usage: coding-agents-tmux/);
   assert.match(helpResult.stdoutText, /tmux-config/);
   assert.equal(configResult.exitCode, 0);
-  assert.match(configResult.stdoutText, /# >>> opencode-tmux >>>/);
+  assert.match(configResult.stdoutText, /# >>> coding-agents-tmux >>>/);
   assert.match(configResult.stdoutText, /--provider/);
   assert.match(configResult.stdoutText, /--waiting/);
+});
+
+test("legacy opencode-tmux CLI alias still works", async () => {
+  const result = await runCommand([LEGACY_BIN_PATH, "--help"]);
+
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdoutText, /Usage: coding-agents-tmux/);
 });
 
 test("CLI install-tmux writes and replaces a marked config block", async () => {
@@ -382,10 +394,10 @@ test("CLI install-tmux writes and replaces a marked config block", async () => {
 
   assert.equal(firstRun.exitCode, 0);
   assert.equal(secondRun.exitCode, 0);
-  assert.match(contents, /# >>> opencode-tmux >>>/);
-  assert.match(contents, /# <<< opencode-tmux <<</);
+  assert.match(contents, /# >>> coding-agents-tmux >>>/);
+  assert.match(contents, /# <<< coding-agents-tmux <<</);
   assert.match(contents, /--provider/);
-  assert.equal(contents.match(/# >>> opencode-tmux >>>/g)?.length, 1);
+  assert.equal(contents.match(/# >>> coding-agents-tmux >>>/g)?.length, 1);
 });
 
 test("CLI install-codex writes Codex config and hooks files", async () => {
@@ -404,6 +416,7 @@ test("CLI install-codex writes Codex config and hooks files", async () => {
     assert.match(result.stdoutText, /Updated .*hooks\.json/);
     assert.match(config, /codex_hooks = true/);
     assert.match(hooks, /codex-hook-state/);
+    assert.match(hooks, /bin\/coding-agents-tmux/);
   } finally {
     restoreEnv();
   }
