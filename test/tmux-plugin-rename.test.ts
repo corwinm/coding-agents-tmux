@@ -70,7 +70,7 @@ exit 0
   chmodSync(npmPath, 0o755);
 }
 
-test("coding-agents-tmux.tmux prefers new tmux option aliases over legacy names", async () => {
+test("coding-agents-tmux.tmux reads renamed tmux options", async () => {
   const fakeTmux = installFakeTmux(`
 log_path='__LOG_PATH__'
 option="\${!#}"
@@ -81,7 +81,7 @@ show-option)
     @coding-agents-tmux-menu-key)
       printf 'N\n'
       ;;
-    @opencode-tmux-menu-key)
+    @coding-agents-tmux-menu-key)
       printf 'O\n'
       ;;
     @coding-agents-tmux-status)
@@ -113,7 +113,7 @@ exit 1
   }
 });
 
-test("coding-agents-tmux.tmux installs new and legacy plugin integration paths", async () => {
+test("coding-agents-tmux.tmux installs renamed plugin integration paths", async () => {
   const fakeTmux = installFakeTmux(`
 log_path='__LOG_PATH__'
 option="\${!#}"
@@ -149,31 +149,17 @@ exit 1
 
   try {
     const result = await runCommand([join(process.cwd(), "coding-agents-tmux.tmux")]);
-    const newPluginPath = join(configHome, "opencode", "plugins", "coding-agents-tmux.ts");
-    const legacyPluginPath = join(configHome, "opencode", "plugins", "opencode-tmux.ts");
-    const newPiExtensionPath = join(piHome, "extensions", "coding-agents-tmux", "index.ts");
-    const legacyPiExtensionPath = join(piHome, "extensions", "opencode-tmux", "index.ts");
+    const pluginPath = join(configHome, "opencode", "plugins", "coding-agents-tmux.ts");
+    const piExtensionPath = join(piHome, "extensions", "coding-agents-tmux", "index.ts");
 
     assert.equal(result.exitCode, 0);
     assert.equal(result.stderrText.trim(), "");
-    assert.ok(existsSync(newPluginPath));
-    assert.ok(existsSync(legacyPluginPath));
-    assert.ok(existsSync(newPiExtensionPath));
-    assert.ok(existsSync(legacyPiExtensionPath));
-    assert.ok(lstatSync(newPluginPath).isSymbolicLink());
-    assert.ok(lstatSync(legacyPluginPath).isSymbolicLink());
-    assert.ok(lstatSync(newPiExtensionPath).isSymbolicLink());
-    assert.ok(lstatSync(legacyPiExtensionPath).isSymbolicLink());
-    assert.equal(
-      readlinkSync(newPluginPath),
-      join(process.cwd(), "plugin", "coding-agents-tmux.ts"),
-    );
-    assert.equal(
-      readlinkSync(legacyPluginPath),
-      join(process.cwd(), "plugin", "coding-agents-tmux.ts"),
-    );
-    assert.equal(readlinkSync(newPiExtensionPath), join(process.cwd(), "plugin", "pi-tmux.ts"));
-    assert.equal(readlinkSync(legacyPiExtensionPath), join(process.cwd(), "plugin", "pi-tmux.ts"));
+    assert.ok(existsSync(pluginPath));
+    assert.ok(existsSync(piExtensionPath));
+    assert.ok(lstatSync(pluginPath).isSymbolicLink());
+    assert.ok(lstatSync(piExtensionPath).isSymbolicLink());
+    assert.equal(readlinkSync(pluginPath), join(process.cwd(), "plugin", "coding-agents-tmux.ts"));
+    assert.equal(readlinkSync(piExtensionPath), join(process.cwd(), "plugin", "pi-tmux.ts"));
   } finally {
     restoreEnv();
   }

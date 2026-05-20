@@ -64,8 +64,7 @@ function normalizeEnvValue(value: string | undefined): string | null {
 
 export function getCodexStateDir(): string {
   return getPreferredStateDir({
-    preferredEnv: "CODING_AGENTS_TMUX_CODEX_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_CODEX_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_CODEX_STATE_DIR",
     subdirectory: "codex-state",
   });
 }
@@ -284,8 +283,7 @@ export async function persistCodexHookState(rawInput: string): Promise<void> {
 
 export function readCodexStateEntries(): CodexStateEntry[] {
   return getStateDirCandidates({
-    preferredEnv: "CODING_AGENTS_TMUX_CODEX_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_CODEX_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_CODEX_STATE_DIR",
     subdirectory: "codex-state",
   })
     .filter((stateDir) => existsSync(stateDir))

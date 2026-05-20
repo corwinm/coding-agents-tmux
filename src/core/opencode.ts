@@ -13,7 +13,7 @@ import { attachRuntimeWithPi } from "./pi.ts";
 import { capturePanePreview } from "./tmux.ts";
 import {
   PRIMARY_CLI_NAME,
-  getEnvAliasValue,
+  getEnvValue,
   getPreferredStateDir,
   getStateDirCandidates,
 } from "../naming.ts";
@@ -152,8 +152,7 @@ function getOpencodeDbPath(): string {
 
 function getPluginStateDir(): string {
   return getPreferredStateDir({
-    preferredEnv: "CODING_AGENTS_TMUX_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_STATE_DIR",
     subdirectory: "plugin-state",
   });
 }
@@ -312,8 +311,7 @@ function toPluginSessionMatch(state: PluginStateFile): SessionMatch | null {
 
 function readPluginStates(): PluginStateFile[] {
   return getStateDirCandidates({
-    preferredEnv: "CODING_AGENTS_TMUX_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_STATE_DIR",
     subdirectory: "plugin-state",
   })
     .filter((stateDir) => existsSync(stateDir))
@@ -754,7 +752,7 @@ function normalizeServerMapSource(value: string | undefined): string | null {
     return value.trim();
   }
 
-  return getEnvAliasValue("CODING_AGENTS_TMUX_SERVER_MAP", "OPENCODE_TMUX_SERVER_MAP") ?? null;
+  return getEnvValue("CODING_AGENTS_TMUX_SERVER_MAP") ?? null;
 }
 
 function parseServerMap(value: string | undefined): Record<string, string> {
@@ -1212,10 +1210,7 @@ function classifyCodexPreview(
 }
 
 function getCodexBusyGraceMs(): number {
-  const value = getEnvAliasValue(
-    "CODING_AGENTS_TMUX_CODEX_BUSY_GRACE_MS",
-    "OPENCODE_TMUX_CODEX_BUSY_GRACE_MS",
-  );
+  const value = getEnvValue("CODING_AGENTS_TMUX_CODEX_BUSY_GRACE_MS");
 
   if (!value) {
     return 3000;
@@ -1530,23 +1525,23 @@ export function getRuntimeProviderHelpText(): string {
     "",
     "Plugin state:",
     `  Default path: ${getPluginStateDir()}`,
-    "  Override with CODING_AGENTS_TMUX_STATE_DIR or OPENCODE_TMUX_STATE_DIR.",
+    "  Override with CODING_AGENTS_TMUX_STATE_DIR.",
     "",
     "Codex hook state:",
     `  Default path: ${getCodexStateDir()}`,
-    "  Override with CODING_AGENTS_TMUX_CODEX_STATE_DIR or OPENCODE_TMUX_CODEX_STATE_DIR.",
+    "  Override with CODING_AGENTS_TMUX_CODEX_STATE_DIR.",
     `  Generate hooks.json with: ${PRIMARY_CLI_NAME} codex-hooks-template`,
     "",
     "Claude hook state:",
     `  Default path: ${getClaudeStateDir()}`,
-    "  Override with CODING_AGENTS_TMUX_CLAUDE_STATE_DIR or OPENCODE_TMUX_CLAUDE_STATE_DIR.",
+    "  Override with CODING_AGENTS_TMUX_CLAUDE_STATE_DIR.",
     `  Generate settings hooks with: ${PRIMARY_CLI_NAME} claude-hooks-template`,
     `  Install global Claude hooks with: ${PRIMARY_CLI_NAME} install-claude`,
     "",
     "Server map:",
     "  Pass --server-map with a JSON object or a path to a JSON file.",
     '  Example: {"work:1.2":"http://127.0.0.1:4096"}',
-    "  You can also set CODING_AGENTS_TMUX_SERVER_MAP or OPENCODE_TMUX_SERVER_MAP with the same value.",
+    "  You can also set CODING_AGENTS_TMUX_SERVER_MAP with the same value.",
   ].join("\n");
 }
 

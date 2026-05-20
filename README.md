@@ -13,14 +13,7 @@ Today the strongest runtime support is still for `opencode`, and the project als
 
 ## Rename status
 
-This project is being renamed from `opencode-tmux` to `coding-agents-tmux`.
-
-In this update:
-
-- **preferred public name:** `coding-agents-tmux`
-- **temporary compatibility aliases:** `opencode-tmux`, `@opencode-tmux-*`, and `OPENCODE_TMUX_*`
-
-The legacy names still work for now, but they are transition aliases and are not intended to stay forever.
+This project was previously named `opencode-tmux`. The current public name is `coding-agents-tmux`.
 
 ## Install
 
@@ -79,25 +72,16 @@ Requirements:
 
 With the recommended settings above, the tmux plugin manages the bundled `opencode` plugin, the Pi extension, and the Codex and Claude hook installs for you.
 
-It installs the bundled `opencode` plugin by creating these symlinks:
+It installs the bundled `opencode` plugin at:
 
 ```text
 ~/.config/opencode/plugins/coding-agents-tmux.ts
-~/.config/opencode/plugins/opencode-tmux.ts
 ```
-
-The new path is preferred. The legacy path is kept as a temporary compatibility alias.
 
 That plugin publishes normalized session state files under:
 
 ```text
 ~/.local/state/coding-agents-tmux/plugin-state
-```
-
-The runtime also continues reading legacy state under:
-
-```text
-~/.local/state/opencode-tmux/plugin-state
 ```
 
 On first install, the tmux plugin also bootstraps the CLI runtime dependencies inside:
@@ -112,22 +96,10 @@ It also installs or updates the bundled Pi extension under:
 ~/.pi/agent/extensions/coding-agents-tmux/index.ts
 ```
 
-The legacy extension path is also kept during the transition:
-
-```text
-~/.pi/agent/extensions/opencode-tmux/index.ts
-```
-
 That extension publishes normalized Pi state files under:
 
 ```text
 ~/.local/state/coding-agents-tmux/pi-state
-```
-
-The runtime also continues reading legacy Pi state under:
-
-```text
-~/.local/state/opencode-tmux/pi-state
 ```
 
 It also installs or updates Codex hook integration under:
@@ -290,8 +262,6 @@ set -ag status-right " #[fg=colour81]󰚩 #[default]#{@coding-agents-tmux-status
 
 `manual` mode is the default. `#{E:@catppuccin_status_agents}` gives Catppuccin users a native-looking module, `#{@coding-agents-tmux-status-inline-format}` gives other themes a tone-aware inline segment, and `#{@coding-agents-tmux-status-text}` gives a plain live summary text export for fully custom wrappers. `append` mode restores the old behavior and appends automatically.
 
-`@catppuccin_status_opencode` still works as a compatibility alias for now.
-
 ## Configuration
 
 Available tmux options:
@@ -322,8 +292,6 @@ Available tmux options:
 - `@coding-agents-tmux-status-color-busy` tmux color for busy state, default `colour220`
 - `@coding-agents-tmux-status-color-waiting` tmux color for waiting state, default `colour196`
 - `@coding-agents-tmux-status-color-unknown` tmux color for unknown/none state, default `colour244`
-
-Legacy `@opencode-tmux-*` tmux options still work for now as transition aliases.
 
 ## Providers
 
@@ -484,5 +452,3 @@ Useful commands:
 ./bin/coding-agents-tmux status --provider plugin --style tmux
 ./bin/coding-agents-tmux tmux-config --provider plugin
 ```
-
-The legacy `./bin/opencode-tmux` alias still works for now during the rename transition.

@@ -188,8 +188,7 @@ export function getClaudeSettingsPath(): string {
 
 export function getClaudeStateDir(): string {
   return getPreferredStateDir({
-    preferredEnv: "CODING_AGENTS_TMUX_CLAUDE_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_CLAUDE_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_CLAUDE_STATE_DIR",
     subdirectory: "claude-state",
   });
 }
@@ -466,8 +465,7 @@ export async function persistClaudeHookState(rawInput: string): Promise<void> {
 
 export function readClaudeStates(): ClaudeStateFile[] {
   return getStateDirCandidates({
-    preferredEnv: "CODING_AGENTS_TMUX_CLAUDE_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_CLAUDE_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_CLAUDE_STATE_DIR",
     subdirectory: "claude-state",
   })
     .filter((stateDir) => existsSync(stateDir))

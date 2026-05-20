@@ -16,43 +16,6 @@ get_tmux_option() {
   fi
 }
 
-get_tmux_option_alias() {
-  local preferred_option="$1"
-  local legacy_option="$2"
-  local default_value="$3"
-  local value
-
-  value="$(tmux show-option -gqv "$preferred_option")"
-  if [ -n "$value" ]; then
-    printf '%s' "$value"
-    return
-  fi
-
-  value="$(tmux show-option -gqv "$legacy_option")"
-  if [ -n "$value" ]; then
-    printf '%s' "$value"
-  else
-    printf '%s' "$default_value"
-  fi
-}
-
-set_tmux_option_alias() {
-  local preferred_option="$1"
-  local legacy_option="$2"
-  local value="$3"
-
-  tmux set-option -gq "$preferred_option" "$value"
-  tmux set-option -gq "$legacy_option" "$value"
-}
-
-unset_tmux_option_alias() {
-  local preferred_option="$1"
-  local legacy_option="$2"
-
-  tmux set-option -gu "$preferred_option"
-  tmux set-option -gu "$legacy_option"
-}
-
 shell_escape() {
   printf "'%s'" "${1//\'/\'\\\'\'}"
 }
@@ -111,21 +74,21 @@ configure_catppuccin_status_module() {
   local module
 
   if [ -z "$text_segment" ] || ! catppuccin_loaded; then
-    unset_tmux_option_alias '@catppuccin_agents_icon' '@catppuccin_opencode_icon'
-    unset_tmux_option_alias '@catppuccin_agents_color' '@catppuccin_opencode_color'
-    unset_tmux_option_alias '@catppuccin_agents_text' '@catppuccin_opencode_text'
-    unset_tmux_option_alias '@catppuccin_status_agents_icon_fg' '@catppuccin_status_opencode_icon_fg'
-    unset_tmux_option_alias '@catppuccin_status_agents_icon_bg' '@catppuccin_status_opencode_icon_bg'
-    unset_tmux_option_alias '@catppuccin_status_agents_text_fg' '@catppuccin_status_opencode_text_fg'
-    unset_tmux_option_alias '@catppuccin_status_agents_text_bg' '@catppuccin_status_opencode_text_bg'
-    unset_tmux_option_alias '@catppuccin_status_agents' '@catppuccin_status_opencode'
+    tmux set-option -gu '@catppuccin_agents_icon'
+    tmux set-option -gu '@catppuccin_agents_color'
+    tmux set-option -gu '@catppuccin_agents_text'
+    tmux set-option -gu '@catppuccin_status_agents_icon_fg'
+    tmux set-option -gu '@catppuccin_status_agents_icon_bg'
+    tmux set-option -gu '@catppuccin_status_agents_text_fg'
+    tmux set-option -gu '@catppuccin_status_agents_text_bg'
+    tmux set-option -gu '@catppuccin_status_agents'
     return
   fi
 
-  set_tmux_option_alias '@catppuccin_agents_icon' '@catppuccin_opencode_icon' "$prefix "
+  tmux set-option -gq '@catppuccin_agents_icon' "$prefix "
   accent_format="#{?#{==:#{E:@coding-agents-tmux-status-tone},waiting},$waiting_color,#{?#{==:#{E:@coding-agents-tmux-status-tone},idle},$idle_color,#{?#{==:#{E:@coding-agents-tmux-status-tone},unknown},$unknown_color,$accent_color}}}"
-  set_tmux_option_alias '@catppuccin_agents_color' '@catppuccin_opencode_color' "$accent_format"
-  set_tmux_option_alias '@catppuccin_agents_text' '@catppuccin_opencode_text' "$text_segment"
+  tmux set-option -gq '@catppuccin_agents_color' "$accent_format"
+  tmux set-option -gq '@catppuccin_agents_text' "$text_segment"
 
   left_separator="$(tmux show-option -gqv @catppuccin_status_left_separator)"
   right_separator="$(tmux show-option -gqv @catppuccin_status_right_separator)"
@@ -148,17 +111,17 @@ configure_catppuccin_status_module() {
     connect_style=''
   fi
 
-  set_tmux_option_alias '@catppuccin_status_agents_icon_fg' '@catppuccin_status_opencode_icon_fg' "$theme_crust"
-  set_tmux_option_alias '@catppuccin_status_agents_icon_bg' '@catppuccin_status_opencode_icon_bg' "$accent_format"
-  set_tmux_option_alias '@catppuccin_status_agents_text_fg' '@catppuccin_status_opencode_text_fg' "$theme_fg"
-  set_tmux_option_alias '@catppuccin_status_agents_text_bg' '@catppuccin_status_opencode_text_bg' "$module_text_bg"
+  tmux set-option -gq '@catppuccin_status_agents_icon_fg' "$theme_crust"
+  tmux set-option -gq '@catppuccin_status_agents_icon_bg' "$accent_format"
+  tmux set-option -gq '@catppuccin_status_agents_text_fg' "$theme_fg"
+  tmux set-option -gq '@catppuccin_status_agents_text_bg' "$module_text_bg"
 
   module="#[fg=#{E:@catppuccin_status_agents_icon_bg},nobold,nounderscore,noitalics]$connect_style$left_separator"
   module="$module#[fg=#{E:@catppuccin_status_agents_icon_fg},bg=#{E:@catppuccin_status_agents_icon_bg}]${prefix} "
   module="$module$middle_separator"
   module="$module#[fg=#{E:@catppuccin_status_agents_text_fg},bg=#{E:@catppuccin_status_agents_text_bg}] #{E:@catppuccin_agents_text}"
   module="$module#[fg=#{E:@catppuccin_status_agents_text_bg}]$connect_style$right_separator"
-  set_tmux_option_alias '@catppuccin_status_agents' '@catppuccin_status_opencode' "$module"
+  tmux set-option -gq '@catppuccin_status_agents' "$module"
 }
 
 remove_status_segment() {
@@ -235,20 +198,6 @@ normalize_toggle() {
   esac
 }
 
-tmux_option_alias_is_set() {
-  local preferred_option="$1"
-  local legacy_option="$2"
-  local value
-
-  value="$(tmux show-option -gqv "$preferred_option")"
-  if [ -n "$value" ]; then
-    return 0
-  fi
-
-  value="$(tmux show-option -gqv "$legacy_option")"
-  [ -n "$value" ]
-}
-
 normalize_auto_install_value() {
   local value lowered
   value="${1// /}"
@@ -293,14 +242,13 @@ unbind_key_if_set() {
 }
 
 store_bound_key() {
-  local preferred_option_name="$1"
-  local legacy_option_name="$2"
-  local key="$3"
+  local option_name="$1"
+  local key="$2"
 
   if [ -n "$key" ]; then
-    set_tmux_option_alias "$preferred_option_name" "$legacy_option_name" "$key"
+    tmux set-option -gq "$option_name" "$key"
   else
-    unset_tmux_option_alias "$preferred_option_name" "$legacy_option_name"
+    tmux set-option -gu "$option_name"
   fi
 }
 
@@ -374,9 +322,9 @@ install_cli_dependencies() {
   local install_command
 
   if [ -f "$CURRENT_DIR/package-lock.json" ] && command -v npm >/dev/null 2>&1; then
-    install_command="npm ci --omit=dev"
+    install_command="npm ci --omit=dev --ignore-scripts"
   elif command -v npm >/dev/null 2>&1; then
-    install_command="npm install --omit=dev"
+    install_command="npm install --omit=dev --ignore-scripts"
   else
     tmux display-message "coding-agents-tmux: npm is required to install CLI dependencies"
     return 1
@@ -404,12 +352,10 @@ install_opencode_plugin() {
   config_root="${XDG_CONFIG_HOME:-$HOME/.config}"
   plugin_dir="$config_root/opencode/plugins"
   plugin_target="$plugin_dir/coding-agents-tmux.ts"
-  legacy_plugin_target="$plugin_dir/opencode-tmux.ts"
 
   mkdir -p "$plugin_dir"
   ln -sfn "$plugin_source" "$plugin_target"
-  ln -sfn "$plugin_source" "$legacy_plugin_target"
-  set_tmux_option_alias '@coding-agents-tmux-plugin-path' '@opencode-tmux-plugin-path' "$plugin_target"
+  tmux set-option -gq '@coding-agents-tmux-plugin-path' "$plugin_target"
 }
 
 install_codex_hooks() {
@@ -425,7 +371,7 @@ install_claude_hooks() {
 }
 
 install_pi_extension() {
-  local extension_source pi_dir extension_dir extension_target legacy_extension_dir legacy_extension_target existing_target installed_changed
+  local extension_source pi_dir extension_dir extension_target existing_target installed_changed
 
   extension_source="$CURRENT_DIR/plugin/pi-tmux.ts"
 
@@ -437,8 +383,6 @@ install_pi_extension() {
   pi_dir="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
   extension_dir="$pi_dir/extensions/coding-agents-tmux"
   extension_target="$extension_dir/index.ts"
-  legacy_extension_dir="$pi_dir/extensions/opencode-tmux"
-  legacy_extension_target="$legacy_extension_dir/index.ts"
   existing_target="$(readlink "$extension_target" 2>/dev/null || true)"
   installed_changed='off'
 
@@ -447,10 +391,8 @@ install_pi_extension() {
   fi
 
   mkdir -p "$extension_dir"
-  mkdir -p "$legacy_extension_dir"
   ln -sfn "$extension_source" "$extension_target"
-  ln -sfn "$extension_source" "$legacy_extension_target"
-  set_tmux_option_alias '@coding-agents-tmux-pi-extension-path' '@opencode-tmux-pi-extension-path' "$extension_target"
+  tmux set-option -gq '@coding-agents-tmux-pi-extension-path' "$extension_target"
 
   if [ "$installed_changed" = 'on' ]; then
     tmux display-message "coding-agents-tmux: Pi extension installed; restart Pi sessions to load it"
@@ -461,18 +403,18 @@ main() {
   local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex install_pi install_claude auto_install_value status_text_segment status_inline_segment status_tone_segment status_refresh_command
   local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown
   local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key
-  menu_key="$(normalize_binding_key "$(get_tmux_option_alias '@coding-agents-tmux-menu-key' '@opencode-tmux-menu-key' 'O')")"
-  popup_key="$(normalize_binding_key "$(get_tmux_option_alias '@coding-agents-tmux-popup-key' '@opencode-tmux-popup-key' 'P')")"
-  waiting_menu_key="$(normalize_binding_key "$(get_tmux_option_alias '@coding-agents-tmux-waiting-menu-key' '@opencode-tmux-waiting-menu-key' 'W')")"
-  waiting_popup_key="$(normalize_binding_key "$(get_tmux_option_alias '@coding-agents-tmux-waiting-popup-key' '@opencode-tmux-waiting-popup-key' 'C-w')")"
-  provider="$(get_tmux_option_alias '@coding-agents-tmux-provider' '@opencode-tmux-provider' 'plugin')"
-  server_map="$(get_tmux_option_alias '@coding-agents-tmux-server-map' '@opencode-tmux-server-map' '')"
-  popup_filter="$(get_tmux_option_alias '@coding-agents-tmux-popup-filter' '@opencode-tmux-popup-filter' 'all')"
-  popup_width="$(get_tmux_option_alias '@coding-agents-tmux-popup-width' '@opencode-tmux-popup-width' '100%')"
-  popup_height="$(get_tmux_option_alias '@coding-agents-tmux-popup-height' '@opencode-tmux-popup-height' '100%')"
-  popup_title="$(get_tmux_option_alias '@coding-agents-tmux-popup-title' '@opencode-tmux-popup-title' 'Coding Agent Sessions')"
-  if tmux_option_alias_is_set '@coding-agents-tmux-auto-install' '@opencode-tmux-auto-install'; then
-    auto_install_value="$(normalize_auto_install_value "$(get_tmux_option_alias '@coding-agents-tmux-auto-install' '@opencode-tmux-auto-install' '')")"
+  menu_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-menu-key' 'O')")"
+  popup_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-popup-key' 'P')")"
+  waiting_menu_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-waiting-menu-key' 'W')")"
+  waiting_popup_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-waiting-popup-key' 'C-w')")"
+  provider="$(get_tmux_option '@coding-agents-tmux-provider' 'plugin')"
+  server_map="$(get_tmux_option '@coding-agents-tmux-server-map' '')"
+  popup_filter="$(get_tmux_option '@coding-agents-tmux-popup-filter' 'all')"
+  popup_width="$(get_tmux_option '@coding-agents-tmux-popup-width' '100%')"
+  popup_height="$(get_tmux_option '@coding-agents-tmux-popup-height' '100%')"
+  popup_title="$(get_tmux_option '@coding-agents-tmux-popup-title' 'Coding Agent Sessions')"
+  if [ -n "$(tmux show-option -gqv '@coding-agents-tmux-auto-install')" ]; then
+    auto_install_value="$(normalize_auto_install_value "$(get_tmux_option '@coding-agents-tmux-auto-install' '')")"
 
     case "$auto_install_value" in
       auto)
@@ -511,28 +453,28 @@ main() {
         ;;
     esac
   else
-    install_plugin="$(normalize_toggle "$(get_tmux_option_alias '@coding-agents-tmux-install-opencode-plugin' '@opencode-tmux-install-opencode-plugin' 'on')")"
-    install_codex="$(normalize_toggle "$(get_tmux_option_alias '@coding-agents-tmux-install-codex-hooks' '@opencode-tmux-install-codex-hooks' 'on')")"
-    install_pi="$(normalize_toggle "$(get_tmux_option_alias '@coding-agents-tmux-install-pi-extension' '@opencode-tmux-install-pi-extension' 'on')")"
-    install_claude="$(normalize_toggle "$(get_tmux_option_alias '@coding-agents-tmux-install-claude-hooks' '@opencode-tmux-install-claude-hooks' 'off')")"
+    install_plugin="$(normalize_toggle "$(get_tmux_option '@coding-agents-tmux-install-opencode-plugin' 'on')")"
+    install_codex="$(normalize_toggle "$(get_tmux_option '@coding-agents-tmux-install-codex-hooks' 'on')")"
+    install_pi="$(normalize_toggle "$(get_tmux_option '@coding-agents-tmux-install-pi-extension' 'on')")"
+    install_claude="$(normalize_toggle "$(get_tmux_option '@coding-agents-tmux-install-claude-hooks' 'off')")"
   fi
-  status_enabled="$(get_tmux_option_alias '@coding-agents-tmux-status' '@opencode-tmux-status' 'on')"
-  status_style="$(get_tmux_option_alias '@coding-agents-tmux-status-style' '@opencode-tmux-status-style' 'tmux')"
-  status_position="$(get_tmux_option_alias '@coding-agents-tmux-status-position' '@opencode-tmux-status-position' 'right')"
-  status_mode="$(normalize_status_mode "$(get_tmux_option_alias '@coding-agents-tmux-status-mode' '@opencode-tmux-status-mode' 'manual')")"
-  status_interval="$(get_tmux_option_alias '@coding-agents-tmux-status-interval' '@opencode-tmux-status-interval' '0')"
-  status_prefix="$(get_tmux_option_alias '@coding-agents-tmux-status-prefix' '@opencode-tmux-status-prefix' '󰚩')"
-  status_color_neutral="$(get_tmux_option_alias '@coding-agents-tmux-status-color-neutral' '@opencode-tmux-status-color-neutral' 'colour252')"
-  status_color_busy="$(get_tmux_option_alias '@coding-agents-tmux-status-color-busy' '@opencode-tmux-status-color-busy' 'colour220')"
-  status_color_waiting="$(get_tmux_option_alias '@coding-agents-tmux-status-color-waiting' '@opencode-tmux-status-color-waiting' 'colour196')"
-  status_color_idle="$(get_tmux_option_alias '@coding-agents-tmux-status-color-idle' '@opencode-tmux-status-color-idle' 'colour70')"
-  status_color_unknown="$(get_tmux_option_alias '@coding-agents-tmux-status-color-unknown' '@opencode-tmux-status-color-unknown' 'colour244')"
-  previous_status_segment="$(get_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' '')"
-  previous_status_option="$(get_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' 'status-right')"
-  previous_menu_key="$(get_tmux_option_alias '@coding-agents-tmux-bound-menu-key' '@opencode-tmux-bound-menu-key' '')"
-  previous_popup_key="$(get_tmux_option_alias '@coding-agents-tmux-bound-popup-key' '@opencode-tmux-bound-popup-key' '')"
-  previous_waiting_menu_key="$(get_tmux_option_alias '@coding-agents-tmux-bound-waiting-menu-key' '@opencode-tmux-bound-waiting-menu-key' '')"
-  previous_waiting_popup_key="$(get_tmux_option_alias '@coding-agents-tmux-bound-waiting-popup-key' '@opencode-tmux-bound-waiting-popup-key' '')"
+  status_enabled="$(get_tmux_option '@coding-agents-tmux-status' 'on')"
+  status_style="$(get_tmux_option '@coding-agents-tmux-status-style' 'tmux')"
+  status_position="$(get_tmux_option '@coding-agents-tmux-status-position' 'right')"
+  status_mode="$(normalize_status_mode "$(get_tmux_option '@coding-agents-tmux-status-mode' 'manual')")"
+  status_interval="$(get_tmux_option '@coding-agents-tmux-status-interval' '0')"
+  status_prefix="$(get_tmux_option '@coding-agents-tmux-status-prefix' '󰚩')"
+  status_color_neutral="$(get_tmux_option '@coding-agents-tmux-status-color-neutral' 'colour252')"
+  status_color_busy="$(get_tmux_option '@coding-agents-tmux-status-color-busy' 'colour220')"
+  status_color_waiting="$(get_tmux_option '@coding-agents-tmux-status-color-waiting' 'colour196')"
+  status_color_idle="$(get_tmux_option '@coding-agents-tmux-status-color-idle' 'colour70')"
+  status_color_unknown="$(get_tmux_option '@coding-agents-tmux-status-color-unknown' 'colour244')"
+  previous_status_segment="$(get_tmux_option '@coding-agents-tmux-status-segment' '')"
+  previous_status_option="$(get_tmux_option '@coding-agents-tmux-status-option' 'status-right')"
+  previous_menu_key="$(get_tmux_option '@coding-agents-tmux-bound-menu-key' '')"
+  previous_popup_key="$(get_tmux_option '@coding-agents-tmux-bound-popup-key' '')"
+  previous_waiting_menu_key="$(get_tmux_option '@coding-agents-tmux-bound-waiting-menu-key' '')"
+  previous_waiting_popup_key="$(get_tmux_option '@coding-agents-tmux-bound-waiting-popup-key' '')"
   status_option="$(normalize_status_option "$status_position")"
 
   if [ ! -f "$CURRENT_DIR/bin/coding-agents-tmux" ]; then
@@ -631,10 +573,10 @@ main() {
     tmux bind-key "$waiting_popup_key" display-popup -E -w "$popup_width" -h "$popup_height" -T "$popup_title (Waiting)" "$waiting_switch_command"
   fi
 
-  store_bound_key '@coding-agents-tmux-bound-menu-key' '@opencode-tmux-bound-menu-key' "$menu_key"
-  store_bound_key '@coding-agents-tmux-bound-popup-key' '@opencode-tmux-bound-popup-key' "$popup_key"
-  store_bound_key '@coding-agents-tmux-bound-waiting-menu-key' '@opencode-tmux-bound-waiting-menu-key' "$waiting_menu_key"
-  store_bound_key '@coding-agents-tmux-bound-waiting-popup-key' '@opencode-tmux-bound-waiting-popup-key' "$waiting_popup_key"
+  store_bound_key '@coding-agents-tmux-bound-menu-key' "$menu_key"
+  store_bound_key '@coding-agents-tmux-bound-popup-key' "$popup_key"
+  store_bound_key '@coding-agents-tmux-bound-waiting-menu-key' "$waiting_menu_key"
+  store_bound_key '@coding-agents-tmux-bound-waiting-popup-key' "$waiting_popup_key"
 
   if [ -n "$previous_status_segment" ]; then
     remove_status_segment "$previous_status_option" "$previous_status_segment"
@@ -647,58 +589,58 @@ main() {
     status_inline_segment="#($status_inline_command)"
     status_tone_segment="#($status_tone_command)"
     tmux set-option -g status-interval "$status_interval"
-    set_tmux_option_alias '@coding-agents-tmux-status-format' '@opencode-tmux-status-format' "$current_status_segment"
-    set_tmux_option_alias '@coding-agents-tmux-status-text' '@opencode-tmux-status-text' "$status_text_segment"
-    set_tmux_option_alias '@coding-agents-tmux-status-inline-format' '@opencode-tmux-status-inline-format' "$status_inline_segment"
-    set_tmux_option_alias '@coding-agents-tmux-status-tone' '@opencode-tmux-status-tone' "$status_tone_segment"
+    tmux set-option -gq '@coding-agents-tmux-status-format' "$current_status_segment"
+    tmux set-option -gq '@coding-agents-tmux-status-text' "$status_text_segment"
+    tmux set-option -gq '@coding-agents-tmux-status-inline-format' "$status_inline_segment"
+    tmux set-option -gq '@coding-agents-tmux-status-tone' "$status_tone_segment"
     configure_catppuccin_status_module "$status_text_segment" "$status_prefix" "$status_color_busy" "$status_color_waiting" "$status_color_idle" "$status_color_unknown"
     configure_status_hooks "$status_refresh_command"
     tmux refresh-client -S >/dev/null 2>&1 || true
 
     if [ "$status_mode" = "append" ]; then
       append_status_segment "$status_option" "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' "$status_option"
-    elif replace_status_placeholder "$status_option" "$current_status_segment" '#{E:@coding-agents-tmux-status-format}' '#{@coding-agents-tmux-status-format}' '#{E:@opencode-tmux-status-format}' '#{@opencode-tmux-status-format}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' "$status_option"
-    elif replace_status_placeholder "$status_option" "$status_text_segment" '#{E:@coding-agents-tmux-status-text}' '#{@coding-agents-tmux-status-text}' '#{E:@opencode-tmux-status-text}' '#{@opencode-tmux-status-text}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' "$status_option"
-    elif replace_status_placeholder "$status_option" "$status_inline_segment" '#{E:@coding-agents-tmux-status-inline-format}' '#{@coding-agents-tmux-status-inline-format}' '#{E:@opencode-tmux-status-inline-format}' '#{@opencode-tmux-status-inline-format}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' "$status_option"
-    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$current_status_segment" '#{E:@coding-agents-tmux-status-format}' '#{@coding-agents-tmux-status-format}' '#{E:@opencode-tmux-status-format}' '#{@opencode-tmux-status-format}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' 'status-left'
-    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$status_text_segment" '#{E:@coding-agents-tmux-status-text}' '#{@coding-agents-tmux-status-text}' '#{E:@opencode-tmux-status-text}' '#{@opencode-tmux-status-text}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' 'status-left'
-    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$status_inline_segment" '#{E:@coding-agents-tmux-status-inline-format}' '#{@coding-agents-tmux-status-inline-format}' '#{E:@opencode-tmux-status-inline-format}' '#{@opencode-tmux-status-inline-format}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' 'status-left'
-    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$current_status_segment" '#{E:@coding-agents-tmux-status-format}' '#{@coding-agents-tmux-status-format}' '#{E:@opencode-tmux-status-format}' '#{@opencode-tmux-status-format}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' 'status-right'
-    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$status_text_segment" '#{E:@coding-agents-tmux-status-text}' '#{@coding-agents-tmux-status-text}' '#{E:@opencode-tmux-status-text}' '#{@opencode-tmux-status-text}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' 'status-right'
-    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$status_inline_segment" '#{E:@coding-agents-tmux-status-inline-format}' '#{@coding-agents-tmux-status-inline-format}' '#{E:@opencode-tmux-status-inline-format}' '#{@opencode-tmux-status-inline-format}'; then
-      set_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment' "$current_status_segment"
-      set_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option' 'status-right'
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' "$status_option"
+    elif replace_status_placeholder "$status_option" "$current_status_segment" '#{E:@coding-agents-tmux-status-format}' '#{@coding-agents-tmux-status-format}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' "$status_option"
+    elif replace_status_placeholder "$status_option" "$status_text_segment" '#{E:@coding-agents-tmux-status-text}' '#{@coding-agents-tmux-status-text}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' "$status_option"
+    elif replace_status_placeholder "$status_option" "$status_inline_segment" '#{E:@coding-agents-tmux-status-inline-format}' '#{@coding-agents-tmux-status-inline-format}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' "$status_option"
+    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$current_status_segment" '#{E:@coding-agents-tmux-status-format}' '#{@coding-agents-tmux-status-format}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' 'status-left'
+    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$status_text_segment" '#{E:@coding-agents-tmux-status-text}' '#{@coding-agents-tmux-status-text}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' 'status-left'
+    elif [ "$status_option" = "status-right" ] && replace_status_placeholder 'status-left' "$status_inline_segment" '#{E:@coding-agents-tmux-status-inline-format}' '#{@coding-agents-tmux-status-inline-format}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' 'status-left'
+    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$current_status_segment" '#{E:@coding-agents-tmux-status-format}' '#{@coding-agents-tmux-status-format}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' 'status-right'
+    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$status_text_segment" '#{E:@coding-agents-tmux-status-text}' '#{@coding-agents-tmux-status-text}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' 'status-right'
+    elif [ "$status_option" = "status-left" ] && replace_status_placeholder 'status-right' "$status_inline_segment" '#{E:@coding-agents-tmux-status-inline-format}' '#{@coding-agents-tmux-status-inline-format}'; then
+      tmux set-option -gq '@coding-agents-tmux-status-segment' "$current_status_segment"
+      tmux set-option -gq '@coding-agents-tmux-status-option' 'status-right'
     else
-      unset_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment'
-      unset_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option'
+      tmux set-option -gu '@coding-agents-tmux-status-segment'
+      tmux set-option -gu '@coding-agents-tmux-status-option'
     fi
   else
     clear_status_hooks
-    unset_tmux_option_alias '@coding-agents-tmux-status-format' '@opencode-tmux-status-format'
-    unset_tmux_option_alias '@coding-agents-tmux-status-text' '@opencode-tmux-status-text'
-    unset_tmux_option_alias '@coding-agents-tmux-status-inline-format' '@opencode-tmux-status-inline-format'
-    unset_tmux_option_alias '@coding-agents-tmux-status-tone' '@opencode-tmux-status-tone'
+    tmux set-option -gu '@coding-agents-tmux-status-format'
+    tmux set-option -gu '@coding-agents-tmux-status-text'
+    tmux set-option -gu '@coding-agents-tmux-status-inline-format'
+    tmux set-option -gu '@coding-agents-tmux-status-tone'
     configure_catppuccin_status_module '' "$status_prefix" "$status_color_busy" "$status_color_waiting" "$status_color_idle" "$status_color_unknown"
-    unset_tmux_option_alias '@coding-agents-tmux-status-segment' '@opencode-tmux-status-segment'
-    unset_tmux_option_alias '@coding-agents-tmux-status-option' '@opencode-tmux-status-option'
+    tmux set-option -gu '@coding-agents-tmux-status-segment'
+    tmux set-option -gu '@coding-agents-tmux-status-option'
   fi
 }
 

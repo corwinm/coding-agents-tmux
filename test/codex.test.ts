@@ -71,7 +71,7 @@ function setEnv(updates: Record<string, string | undefined>): () => void {
 }
 
 function installFakeTmux(script: string): { pathEntry: string } {
-  const dir = mkdtempSync(join(tmpdir(), "opencode-tmux-fake-tmux-"));
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-fake-tmux-"));
   const scriptPath = join(dir, "tmux");
 
   writeFileSync(
@@ -88,7 +88,7 @@ ${script}
 
 test("buildCodexHooksTemplate emits all hook events with the ingest command", () => {
   const template = JSON.parse(
-    buildCodexHooksTemplate("/tmp/opencode-tmux/bin/opencode-tmux codex-hook-state"),
+    buildCodexHooksTemplate("/tmp/coding-agents-tmux/bin/coding-agents-tmux codex-hook-state"),
   ) as {
     hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
   };
@@ -102,14 +102,14 @@ test("buildCodexHooksTemplate emits all hook events with the ingest command", ()
   ]);
   assert.equal(
     template.hooks.Stop?.[0]?.hooks[0]?.command,
-    "/tmp/opencode-tmux/bin/opencode-tmux codex-hook-state",
+    "/tmp/coding-agents-tmux/bin/coding-agents-tmux codex-hook-state",
   );
 });
 
 test("persistCodexHookState classifies multiple-choice prompts as waiting-question", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   const restoreEnv = setEnv({
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
     TMUX_PANE: undefined,
   });
 
@@ -133,7 +133,7 @@ test("persistCodexHookState classifies multiple-choice prompts as waiting-questi
   }
 });
 
-test("readCodexStates supports new env aliases and both default state roots", () => {
+test("readCodexStates supports env override and default state root", () => {
   const preferredStateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   writeFileSync(
     join(preferredStateDir, "preferred.json"),
@@ -149,7 +149,6 @@ test("readCodexStates supports new env aliases and both default state roots", ()
   );
   const explicitEnvRestore = setEnv({
     CODING_AGENTS_TMUX_CODEX_STATE_DIR: preferredStateDir,
-    OPENCODE_TMUX_CODEX_STATE_DIR: undefined,
   });
 
   try {
@@ -160,9 +159,7 @@ test("readCodexStates supports new env aliases and both default state roots", ()
 
   const stateHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-home-"));
   const preferredRoot = join(stateHome, "coding-agents-tmux", "codex-state");
-  const legacyRoot = join(stateHome, "opencode-tmux", "codex-state");
   mkdirSync(preferredRoot, { recursive: true });
-  mkdirSync(legacyRoot, { recursive: true });
   writeFileSync(
     join(preferredRoot, "preferred.json"),
     JSON.stringify({
@@ -175,28 +172,15 @@ test("readCodexStates supports new env aliases and both default state roots", ()
       updatedAt: 200,
     }),
   );
-  writeFileSync(
-    join(legacyRoot, "legacy.json"),
-    JSON.stringify({
-      version: 1,
-      target: "work:1.2",
-      directory: "/tmp/codex-root-legacy",
-      title: "Legacy Root Codex Session",
-      status: "waiting-input",
-      activity: "busy",
-      updatedAt: 300,
-    }),
-  );
   const restoreEnv = setEnv({
     XDG_STATE_HOME: stateHome,
     CODING_AGENTS_TMUX_CODEX_STATE_DIR: undefined,
-    OPENCODE_TMUX_CODEX_STATE_DIR: undefined,
   });
 
   try {
     const titles = readCodexStates().map((state) => state.title);
 
-    assert.deepEqual(titles, ["Preferred Root Codex Session", "Legacy Root Codex Session"]);
+    assert.deepEqual(titles, ["Preferred Root Codex Session"]);
   } finally {
     restoreEnv();
   }
@@ -227,7 +211,7 @@ test("updateCodexHooks merges managed hooks without dropping existing user hooks
                 hooks: [
                   {
                     type: "command",
-                    command: "/old/opencode-tmux codex-hook-state",
+                    command: "/old/coding-agents-tmux codex-hook-state",
                     statusMessage: "Updating Codex tmux state",
                   },
                 ],
@@ -241,7 +225,7 @@ test("updateCodexHooks merges managed hooks without dropping existing user hooks
         null,
         2,
       ),
-      "/new/opencode-tmux codex-hook-state",
+      "/new/coding-agents-tmux codex-hook-state",
     ),
   ) as {
     hooks: Record<string, Array<{ hooks: Array<{ command: string }> }>>;
@@ -249,7 +233,10 @@ test("updateCodexHooks merges managed hooks without dropping existing user hooks
 
   assert.equal(updated.hooks.Stop?.length, 2);
   assert.equal(updated.hooks.Stop?.[0]?.hooks[0]?.command, "python3 ~/.codex/custom-stop.py");
-  assert.equal(updated.hooks.Stop?.[1]?.hooks[0]?.command, "/new/opencode-tmux codex-hook-state");
+  assert.equal(
+    updated.hooks.Stop?.[1]?.hooks[0]?.command,
+    "/new/coding-agents-tmux codex-hook-state",
+  );
   assert.deepEqual(Object.keys(updated.hooks), [
     "Stop",
     "SessionStart",
@@ -260,11 +247,13 @@ test("updateCodexHooks merges managed hooks without dropping existing user hooks
 });
 
 test("installCodexIntegration writes config.toml and hooks.json under CODEX_HOME", () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-home-"));
+  const codexHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-home-"));
   const restoreEnv = setEnv({ CODEX_HOME: codexHome });
 
   try {
-    const result = installCodexIntegration("/tmp/opencode-tmux/bin/opencode-tmux codex-hook-state");
+    const result = installCodexIntegration(
+      "/tmp/coding-agents-tmux/bin/coding-agents-tmux codex-hook-state",
+    );
     const config = readFileSync(result.configPath, "utf8");
     const hooks = readFileSync(result.hooksPath, "utf8");
 
@@ -291,10 +280,10 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -328,10 +317,10 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -362,7 +351,7 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   writeFileSync(
     join(stateDir, "pane.json"),
     JSON.stringify({
@@ -381,7 +370,7 @@ exit 1
   );
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -413,7 +402,7 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   writeFileSync(
     join(stateDir, "pane.json"),
     JSON.stringify({
@@ -432,7 +421,7 @@ exit 1
   );
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -465,7 +454,7 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   writeFileSync(
     join(stateDir, "pane.json"),
     JSON.stringify({
@@ -484,7 +473,7 @@ exit 1
   );
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -515,7 +504,7 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   writeFileSync(
     join(stateDir, "pane.json"),
     JSON.stringify({
@@ -534,8 +523,8 @@ exit 1
   );
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
-    OPENCODE_TMUX_CODEX_BUSY_GRACE_MS: "3000",
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_BUSY_GRACE_MS: "3000",
   });
 
   try {
@@ -568,10 +557,10 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -599,10 +588,10 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -623,7 +612,7 @@ exit 1
 });
 
 test("Codex runtime does not borrow another pane's hook state by directory alone", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "capture-pane" ]; then
   printf '╭──────────────────────────────────────────────╮\n'
@@ -655,7 +644,7 @@ exit 1
   );
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
   });
 
   try {
@@ -672,9 +661,9 @@ exit 1
 });
 
 test("persistCodexHookState records waiting-input and attachRuntimeToPanes prefers hook state", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   const restoreEnv = setEnv({
-    OPENCODE_TMUX_CODEX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
     TMUX_PANE: undefined,
   });
 

@@ -26,7 +26,7 @@ import type {
 } from "../src/types.ts";
 
 const BIN_PATH = join(process.cwd(), "bin", "coding-agents-tmux");
-const LEGACY_BIN_PATH = join(process.cwd(), "bin", "opencode-tmux");
+const LEGACY_BIN_PATH = join(process.cwd(), "bin", "coding-agents-tmux");
 
 function setEnv(updates: Record<string, string | undefined>): () => void {
   const previous = new Map<string, string | undefined>();
@@ -52,7 +52,7 @@ function setEnv(updates: Record<string, string | undefined>): () => void {
 }
 
 function createPluginStateDir(states: Record<string, unknown>[]): string {
-  const root = mkdtempSync(join(tmpdir(), "opencode-tmux-cli-state-"));
+  const root = mkdtempSync(join(tmpdir(), "coding-agents-tmux-cli-state-"));
 
   states.forEach((state, index) => {
     writeFileSync(join(root, `state-${index + 1}.json`), JSON.stringify(state), "utf8");
@@ -62,7 +62,7 @@ function createPluginStateDir(states: Record<string, unknown>[]): string {
 }
 
 function installFakeTmux(script: string): { pathEntry: string; logPath: string } {
-  const dir = mkdtempSync(join(tmpdir(), "opencode-tmux-cli-tmux-"));
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-cli-tmux-"));
   const tmuxPath = join(dir, "tmux");
   const logPath = join(dir, "tmux.log");
   const resolvedScript = script.replaceAll("__LOG_PATH__", logPath);
@@ -290,9 +290,9 @@ test("getTmuxConfigPath and updateTmuxConfig choose defaults, append, and replac
     [
       "set -g mouse on",
       "",
-      "# >>> opencode-tmux >>>",
+      "# >>> coding-agents-tmux >>>",
       "old config",
-      "# <<< opencode-tmux <<<",
+      "# <<< coding-agents-tmux <<<",
       "",
     ].join("\n"),
     snippet,
@@ -383,7 +383,7 @@ test("CLI help and tmux-config work through the entrypoint script", async () => 
   assert.match(configResult.stdoutText, /--waiting/);
 });
 
-test("legacy opencode-tmux CLI alias still works", async () => {
+test("coding-agents-tmux CLI entrypoint works", async () => {
   const result = await runCommand([LEGACY_BIN_PATH, "--help"]);
 
   assert.equal(result.exitCode, 0);
@@ -391,7 +391,7 @@ test("legacy opencode-tmux CLI alias still works", async () => {
 });
 
 test("CLI install-tmux writes and replaces a marked config block", async () => {
-  const dir = mkdtempSync(join(tmpdir(), "opencode-tmux-cli-test-"));
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-cli-test-"));
   const filePath = join(dir, "tmux.conf");
   const firstRun = await runCommand([BIN_PATH, "install-tmux", "--file", filePath]);
   const secondRun = await runCommand([
@@ -413,7 +413,7 @@ test("CLI install-tmux writes and replaces a marked config block", async () => {
 });
 
 test("CLI install-codex writes Codex config and hooks files", async () => {
-  const codexHome = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-home-"));
+  const codexHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-home-"));
   const restoreEnv = setEnv({ CODEX_HOME: codexHome });
 
   try {
@@ -474,7 +474,7 @@ exit 1
   ]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
   });
 
   try {
@@ -528,7 +528,7 @@ fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const codexStateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-codex-state-"));
+  const codexStateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
   writeFileSync(
     join(codexStateDir, "pane.json"),
     JSON.stringify({
@@ -548,7 +548,7 @@ exit 1
   );
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_CODEX_STATE_DIR: codexStateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: codexStateDir,
   });
 
   try {
@@ -618,7 +618,7 @@ exit 0
   ]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
     TMUX: "1",
   });
 
@@ -664,7 +664,7 @@ exit 1
   ]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
     TMUX: "1",
   });
 
@@ -768,7 +768,16 @@ exit 1
   ]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-codex-state-"),
+    ),
+    CODING_AGENTS_TMUX_PI_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-pi-state-"),
+    ),
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
   });
 
   try {
@@ -867,7 +876,7 @@ exit 1
   ]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
     TMUX: "1",
   });
 
@@ -930,7 +939,7 @@ exit 1
   ]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
     TMUX: "1",
   });
 

@@ -780,19 +780,14 @@ export function getTmuxConfigPath(file: string | undefined): string {
 }
 
 export function updateTmuxConfig(existing: string, snippet: string): string {
-  const markerPairs = [
-    ["# >>> coding-agents-tmux >>>", "# <<< coding-agents-tmux <<<"],
-    ["# >>> opencode-tmux >>>", "# <<< opencode-tmux <<<"],
-  ] as const;
+  const startMarker = "# >>> coding-agents-tmux >>>";
+  const endMarker = "# <<< coding-agents-tmux <<<";
+  const blockPattern = new RegExp(
+    `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}`,
+  );
 
-  for (const [startMarker, endMarker] of markerPairs) {
-    const blockPattern = new RegExp(
-      `${escapeRegExp(startMarker)}[\\s\\S]*?${escapeRegExp(endMarker)}`,
-    );
-
-    if (blockPattern.test(existing)) {
-      return existing.replace(blockPattern, snippet);
-    }
+  if (blockPattern.test(existing)) {
+    return existing.replace(blockPattern, snippet);
   }
 
   return `${existing.trimEnd()}${existing.trimEnd() ? "\n\n" : ""}${snippet}\n`;

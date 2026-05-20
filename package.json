@@ -12,8 +12,7 @@
     "url": "git+https://github.com/corwinm/coding-agents-tmux.git"
   },
   "bin": {
-    "coding-agents-tmux": "bin/coding-agents-tmux",
-    "opencode-tmux": "bin/opencode-tmux"
+    "coding-agents-tmux": "bin/coding-agents-tmux"
   },
   "type": "module",
   "scripts": {

@@ -33,7 +33,7 @@ function createPane(overrides: Partial<TmuxPane> = {}): TmuxPane {
     paneId: overrides.paneId ?? `%${paneIndex + 1}`,
     paneTitle: overrides.paneTitle ?? "OpenCode",
     currentCommand: overrides.currentCommand ?? "opencode",
-    currentPath: overrides.currentPath ?? "/Users/corwin/Developer/opencode-tmux",
+    currentPath: overrides.currentPath ?? "/Users/corwin/Developer/coding-agents-tmux",
     isActive: overrides.isActive ?? false,
     tty: overrides.tty ?? "/dev/ttys001",
     target: overrides.target ?? `${sessionName}:${windowIndex}.${paneIndex}`,
@@ -291,7 +291,7 @@ test("renderCompactPaneList prints tab-separated rows", () => {
 
   assert.equal(
     renderCompactPaneList([pane]),
-    "work:1.0\tidle\tidle\tplugin-exact\t1\tSession Title\tOpenCode\t/Users/corwin/Developer/opencode-tmux",
+    "work:1.0\tidle\tidle\tplugin-exact\t1\tSession Title\tOpenCode\t/Users/corwin/Developer/coding-agents-tmux",
   );
   assert.equal(renderCompactPaneList([]), "");
 });
@@ -308,7 +308,7 @@ test("renderCompactPaneList falls back to unmatched and untitled labels", () => 
 
   assert.equal(
     renderCompactPaneList([pane]),
-    "work:1.1\tunknown\tunknown\tunmapped\t0\t(unmatched)\t(untitled)\t/Users/corwin/Developer/opencode-tmux",
+    "work:1.1\tunknown\tunknown\tunmapped\t0\t(unmatched)\t(untitled)\t/Users/corwin/Developer/coding-agents-tmux",
   );
 });
 
