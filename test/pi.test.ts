@@ -63,7 +63,7 @@ function setEnv(updates: Record<string, string | undefined>): () => void {
 }
 
 function createPiStateDir(states: Record<string, unknown>[]): string {
-  const root = mkdtempSync(join(tmpdir(), "opencode-tmux-pi-state-"));
+  const root = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-state-"));
 
   states.forEach((state, index) => {
     writeFileSync(join(root, `state-${index + 1}.json`), JSON.stringify(state), "utf8");
@@ -73,7 +73,7 @@ function createPiStateDir(states: Record<string, unknown>[]): string {
 }
 
 function installFakeTmux(script: string): { pathEntry: string } {
-  const dir = mkdtempSync(join(tmpdir(), "opencode-tmux-pi-fake-tmux-"));
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-fake-tmux-"));
   const tmuxPath = join(dir, "tmux");
 
   writeFileSync(
@@ -89,7 +89,7 @@ ${script}
   return { pathEntry: dir };
 }
 
-test("Pi runtime supports new env aliases and both default state roots", async () => {
+test("Pi runtime supports env override and default state root", async () => {
   const preferredStateDir = createPiStateDir([
     {
       target: "work:1.0",
@@ -102,7 +102,6 @@ test("Pi runtime supports new env aliases and both default state roots", async (
   ]);
   const explicitEnvRestore = setEnv({
     CODING_AGENTS_TMUX_PI_STATE_DIR: preferredStateDir,
-    OPENCODE_TMUX_PI_STATE_DIR: undefined,
   });
 
   try {
@@ -118,9 +117,7 @@ test("Pi runtime supports new env aliases and both default state roots", async (
 
   const stateHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-state-home-"));
   const preferredRoot = join(stateHome, "coding-agents-tmux", "pi-state");
-  const legacyRoot = join(stateHome, "opencode-tmux", "pi-state");
   mkdirSync(preferredRoot, { recursive: true });
-  mkdirSync(legacyRoot, { recursive: true });
   writeFileSync(
     join(preferredRoot, "preferred.json"),
     JSON.stringify({
@@ -132,21 +129,9 @@ test("Pi runtime supports new env aliases and both default state roots", async (
       updatedAt: 200,
     }),
   );
-  writeFileSync(
-    join(legacyRoot, "legacy.json"),
-    JSON.stringify({
-      target: "work:1.2",
-      directory: "/tmp/pi-root-legacy",
-      title: "Legacy Root Pi Session",
-      status: "waiting-input",
-      activity: "busy",
-      updatedAt: 300,
-    }),
-  );
   const restoreEnv = setEnv({
     XDG_STATE_HOME: stateHome,
     CODING_AGENTS_TMUX_PI_STATE_DIR: undefined,
-    OPENCODE_TMUX_PI_STATE_DIR: undefined,
   });
 
   try {
@@ -157,18 +142,11 @@ test("Pi runtime supports new env aliases and both default state roots", async (
           currentPath: "/tmp/pi-root-preferred",
           paneIndex: 1,
         }),
-        createDiscoveredPiPane({
-          target: "work:1.2",
-          currentPath: "/tmp/pi-root-legacy",
-          paneIndex: 2,
-        }),
       ],
       { provider: "plugin" },
     );
 
     assert.equal(summaries[0]?.runtime?.session?.title, "Preferred Root Pi Session");
-    assert.equal(summaries[1]?.runtime?.session?.title, "Legacy Root Pi Session");
-    assert.equal(summaries[1]?.runtime?.status, "waiting-input");
   } finally {
     restoreEnv();
   }
@@ -201,7 +179,7 @@ test("Pi runtime matches panes by target, pane id, and unique cwd fallback", asy
       updatedAt: 300,
     },
   ]);
-  const restoreEnv = setEnv({ OPENCODE_TMUX_PI_STATE_DIR: stateDir });
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir });
 
   try {
     const summaries = await attachRuntimeToPanes([
@@ -250,7 +228,7 @@ exit 1
   ]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_PI_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
   });
 
   try {
@@ -281,7 +259,7 @@ exit 1
   const stateDir = createPiStateDir([]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_PI_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
   });
 
   try {
@@ -309,7 +287,7 @@ exit 1
   const stateDir = createPiStateDir([]);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_PI_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
   });
 
   try {

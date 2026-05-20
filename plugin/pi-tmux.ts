@@ -23,7 +23,6 @@ interface PiExtensionAPI {
 
 const STATE_DIR =
   process.env.CODING_AGENTS_TMUX_PI_STATE_DIR ??
-  process.env.OPENCODE_TMUX_PI_STATE_DIR ??
   join(
     process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
     "coding-agents-tmux",

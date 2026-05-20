@@ -445,9 +445,12 @@ Mitigation:
 
 ## Remaining implementation decisions
 
-- [ ] Decide the deprecation window to communicate for legacy CLI/env/tmux-option aliases.
+Tracked in `docs/remove-legacy-name-plan.md`.
+
+- [ ] Decide the deprecation window to communicate for legacy CLI/env/tmux-option/state/path aliases.
 - [ ] Decide whether to emit runtime warnings when legacy names are used, or only document the deprecation.
 - [ ] Decide the exact release boundary for removing the legacy aliases.
+- [ ] Verify TPM install/reload still works with the renamed repo and entrypoint.
 
 ## Success criteria
 
@@ -494,3 +497,6 @@ The rename is successful when:
 - 2026-04-14: Re-validated the rename work with `npm test`, `npm run typecheck`, `npm run lint`, `npm run shell:check`, and `npm run fmt:check` after restoring dev dependencies with `npm ci`.
 - 2026-04-14: Audited the remaining markdown docs, updated `PLAN.md`, `TASKS.md`, and the Pi support plan for the new public name where practical, and added `docs/rename-coding-agents-tmux-migration.md` as a dedicated migration and release-notes guide.
 - 2026-04-16: Renamed the Catppuccin manual-mode status export from `@catppuccin_status_opencode` to `@catppuccin_status_agents`, kept the legacy export as a compatibility alias, and updated the README plus migration guide to call out the change explicitly.
+- 2026-05-20: Trimmed README legacy-name details so install/configuration/CLI docs only show the new public surfaces outside the short rename note, and added `docs/remove-legacy-name-plan.md` to track the remaining alias cleanup decisions and validation work.
+- 2026-05-20: Decided the next release is the removal boundary for legacy aliases, removed runtime/path/CLI/tmux/env compatibility aliases, updated tests and migration guidance for the new-name-only behavior, and revalidated with the standard automated checks.
+- 2026-05-20: Verified the renamed tmux plugin install/reload path manually via `scripts/sync-tmux-plugin.sh --reload --bootstrap`; production bootstrap now skips dev-only lifecycle scripts with `--ignore-scripts` so omitted Husky dev dependencies do not break tmux-managed installs.

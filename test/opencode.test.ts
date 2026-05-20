@@ -69,7 +69,7 @@ function setEnv(updates: Record<string, string | undefined>): () => void {
 }
 
 function createPluginStateDir(states: Record<string, unknown>[]): string {
-  const root = mkdtempSync(join(tmpdir(), "opencode-tmux-plugin-state-"));
+  const root = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-state-"));
 
   states.forEach((state, index) => {
     writeFileSync(join(root, `state-${index + 1}.json`), JSON.stringify(state), "utf8");
@@ -79,7 +79,7 @@ function createPluginStateDir(states: Record<string, unknown>[]): string {
 }
 
 function createSqliteDataHome(): { dataHome: string; databasePath: string } {
-  const dataHome = mkdtempSync(join(tmpdir(), "opencode-tmux-data-home-"));
+  const dataHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-data-home-"));
   const opencodeDir = join(dataHome, "opencode");
   mkdirSync(opencodeDir, { recursive: true });
   return {
@@ -137,7 +137,7 @@ function getSummary(summaries: PaneRuntimeSummary[], index: number): PaneRuntime
   return summary;
 }
 
-test("plugin provider matches panes by target, pane id, and legacy directory state", async () => {
+test("plugin provider matches panes by target, pane id, and directory state", async () => {
   const pluginStateDir = createPluginStateDir([
     {
       target: "work:1.0",
@@ -164,7 +164,7 @@ test("plugin provider matches panes by target, pane id, and legacy directory sta
       updatedAt: 300,
     },
   ]);
-  const restoreEnv = setEnv({ OPENCODE_TMUX_STATE_DIR: pluginStateDir });
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
 
   try {
     const panes = [
@@ -210,7 +210,7 @@ test("plugin provider uses safe descendant heuristics and leaves ambiguous panes
       updatedAt: 300,
     },
   ]);
-  const restoreEnv = setEnv({ OPENCODE_TMUX_STATE_DIR: pluginStateDir });
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
 
   try {
     const panes = [
@@ -231,7 +231,7 @@ test("plugin provider uses safe descendant heuristics and leaves ambiguous panes
 
 test("sqlite provider classifies exact matches across idle, waiting, running, and unfinished steps", async () => {
   const { dataHome, databasePath } = createSqliteDataHome();
-  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, OPENCODE_TMUX_STATE_DIR: undefined });
+  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, CODING_AGENTS_TMUX_STATE_DIR: undefined });
   const database = initializeSqliteDatabase(databasePath);
 
   try {
@@ -337,7 +337,7 @@ test("sqlite provider classifies exact matches across idle, waiting, running, an
 
 test("sqlite provider uses descendant heuristics only when they are unambiguous", async () => {
   const { dataHome, databasePath } = createSqliteDataHome();
-  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, OPENCODE_TMUX_STATE_DIR: undefined });
+  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, CODING_AGENTS_TMUX_STATE_DIR: undefined });
   const database = initializeSqliteDatabase(databasePath);
 
   try {
@@ -410,7 +410,7 @@ test("sqlite provider uses descendant heuristics only when they are unambiguous"
 });
 
 test("server provider parses inline and file-backed maps and normalizes endpoints", async () => {
-  const mapFile = join(mkdtempSync(join(tmpdir(), "opencode-tmux-server-map-")), "map.json");
+  const mapFile = join(mkdtempSync(join(tmpdir(), "coding-agents-tmux-server-map-")), "map.json");
   writeFileSync(mapFile, JSON.stringify({ "work:1.1": "http://127.0.0.1:4097/" }), "utf8");
 
   const responses = new Map<string, unknown>([
@@ -465,23 +465,12 @@ test("server provider parses inline and file-backed maps and normalizes endpoint
 });
 
 test("describeServerMapInput falls back to env when no explicit value is provided", () => {
-  const restoreEnv = setEnv({ OPENCODE_TMUX_SERVER_MAP: '{"work:1.0":"http://127.0.0.1:4096"}' });
-
-  try {
-    assert.equal(describeServerMapInput(undefined), '{"work:1.0":"http://127.0.0.1:4096"}');
-  } finally {
-    restoreEnv();
-  }
-});
-
-test("describeServerMapInput prefers the new CODING_AGENTS_TMUX_SERVER_MAP alias", () => {
   const restoreEnv = setEnv({
-    CODING_AGENTS_TMUX_SERVER_MAP: '{"work:1.2":"http://127.0.0.1:5096"}',
-    OPENCODE_TMUX_SERVER_MAP: '{"work:1.0":"http://127.0.0.1:4096"}',
+    CODING_AGENTS_TMUX_SERVER_MAP: '{"work:1.0":"http://127.0.0.1:4096"}',
   });
 
   try {
-    assert.equal(describeServerMapInput(undefined), '{"work:1.2":"http://127.0.0.1:5096"}');
+    assert.equal(describeServerMapInput(undefined), '{"work:1.0":"http://127.0.0.1:4096"}');
   } finally {
     restoreEnv();
   }
@@ -507,9 +496,9 @@ test("runtime provider helpers expose provider docs, template output, and valida
   });
   assert.match(helpText, /Runtime providers:/);
   assert.match(helpText, /plugin  Use opencode plugin state files only/);
-  assert.match(helpText, /Override with CODING_AGENTS_TMUX_STATE_DIR or OPENCODE_TMUX_STATE_DIR/);
+  assert.match(helpText, /Override with CODING_AGENTS_TMUX_STATE_DIR\./);
   assert.match(helpText, /Generate hooks\.json with: coding-agents-tmux codex-hooks-template/);
-  assert.match(helpText, /CODING_AGENTS_TMUX_SERVER_MAP or OPENCODE_TMUX_SERVER_MAP/);
+  assert.match(helpText, /CODING_AGENTS_TMUX_SERVER_MAP with the same value/);
   assert.match(helpText, /Codex hook state:/);
   await assert.rejects(
     attachRuntimeToPanes([createDiscoveredPane()], { provider: "bogus" as never }),
@@ -517,7 +506,7 @@ test("runtime provider helpers expose provider docs, template output, and valida
   );
 });
 
-test("plugin state supports new env aliases and both default state roots", async () => {
+test("plugin state supports env override and default state root", async () => {
   const preferredStateDir = createPluginStateDir([
     {
       target: "work:1.0",
@@ -530,7 +519,6 @@ test("plugin state supports new env aliases and both default state roots", async
   ]);
   const explicitEnvRestore = setEnv({
     CODING_AGENTS_TMUX_STATE_DIR: preferredStateDir,
-    OPENCODE_TMUX_STATE_DIR: undefined,
   });
 
   try {
@@ -547,9 +535,7 @@ test("plugin state supports new env aliases and both default state roots", async
 
   const stateHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-state-home-"));
   const preferredRoot = join(stateHome, "coding-agents-tmux", "plugin-state");
-  const legacyRoot = join(stateHome, "opencode-tmux", "plugin-state");
   mkdirSync(preferredRoot, { recursive: true });
-  mkdirSync(legacyRoot, { recursive: true });
   writeFileSync(
     join(preferredRoot, "preferred.json"),
     JSON.stringify({
@@ -561,35 +547,18 @@ test("plugin state supports new env aliases and both default state roots", async
       updatedAt: 300,
     }),
   );
-  writeFileSync(
-    join(legacyRoot, "legacy.json"),
-    JSON.stringify({
-      target: "work:1.2",
-      directory: "/tmp/legacy-root",
-      title: "Legacy Root Session",
-      status: "waiting-input",
-      activity: "busy",
-      updatedAt: 400,
-    }),
-  );
   const restoreEnv = setEnv({
     XDG_STATE_HOME: stateHome,
     CODING_AGENTS_TMUX_STATE_DIR: undefined,
-    OPENCODE_TMUX_STATE_DIR: undefined,
   });
 
   try {
     const summaries = await attachRuntimeToPanes(
-      [
-        createDiscoveredPane({ target: "work:1.1", currentPath: "/tmp/preferred-root" }),
-        createDiscoveredPane({ target: "work:1.2", currentPath: "/tmp/legacy-root", paneIndex: 2 }),
-      ],
+      [createDiscoveredPane({ target: "work:1.1", currentPath: "/tmp/preferred-root" })],
       { provider: "plugin" },
     );
 
     assert.equal(getRuntime(getSummary(summaries, 0)).session?.title, "Preferred Root Session");
-    assert.equal(getRuntime(getSummary(summaries, 1)).session?.title, "Legacy Root Session");
-    assert.equal(getRuntime(getSummary(summaries, 1)).status, "waiting-input");
   } finally {
     restoreEnv();
   }
@@ -626,8 +595,8 @@ test("codex panes use a coarse command-backed runtime classification", async () 
 });
 
 test("sqlite provider reports a missing database as unknown runtime detail", async () => {
-  const dataHome = mkdtempSync(join(tmpdir(), "opencode-tmux-missing-db-"));
-  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, OPENCODE_TMUX_STATE_DIR: undefined });
+  const dataHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-missing-db-"));
+  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, CODING_AGENTS_TMUX_STATE_DIR: undefined });
 
   try {
     const summaries = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "sqlite" });
@@ -673,7 +642,7 @@ test("auto provider keeps plugin matches and falls back to sqlite when server st
   ]);
   const { dataHome, databasePath } = createSqliteDataHome();
   const restoreEnv = setEnv({
-    OPENCODE_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
     XDG_DATA_HOME: dataHome,
   });
   const database = initializeSqliteDatabase(databasePath);

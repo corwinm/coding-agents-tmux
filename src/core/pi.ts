@@ -70,16 +70,14 @@ function pickNewerPiState(current: PiStateFile | undefined, candidate: PiStateFi
 
 export function getPiStateDir(): string {
   return getPreferredStateDir({
-    preferredEnv: "CODING_AGENTS_TMUX_PI_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_PI_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_PI_STATE_DIR",
     subdirectory: "pi-state",
   });
 }
 
 function readPiStates(): PiStateFile[] {
   return getStateDirCandidates({
-    preferredEnv: "CODING_AGENTS_TMUX_PI_STATE_DIR",
-    legacyEnv: "OPENCODE_TMUX_PI_STATE_DIR",
+    env: "CODING_AGENTS_TMUX_PI_STATE_DIR",
     subdirectory: "pi-state",
   })
     .filter((stateDir) => existsSync(stateDir))

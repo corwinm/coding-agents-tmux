@@ -3,8 +3,8 @@
 set -euo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TARGET_DIR="${CODING_AGENTS_TMUX_PLUGIN_DIR:-${OPENCODE_TMUX_PLUGIN_DIR:-$HOME/.tmux/plugins/coding-agents-tmux}}"
-TMUX_CONF="${CODING_AGENTS_TMUX_TMUX_CONF:-${OPENCODE_TMUX_TMUX_CONF:-$HOME/.tmux.conf}}"
+TARGET_DIR="${CODING_AGENTS_TMUX_PLUGIN_DIR:-$HOME/.tmux/plugins/coding-agents-tmux}"
+TMUX_CONF="${CODING_AGENTS_TMUX_TMUX_CONF:-$HOME/.tmux.conf}"
 RELOAD=0
 BOOTSTRAP=0
 
@@ -27,18 +27,14 @@ run_bootstrap() {
   fi
 
   if [ -f "$TARGET_DIR/package-lock.json" ]; then
-    npm ci --omit=dev --prefix "$TARGET_DIR"
+    npm ci --omit=dev --ignore-scripts --prefix "$TARGET_DIR"
   else
-    npm install --omit=dev --prefix "$TARGET_DIR"
+    npm install --omit=dev --ignore-scripts --prefix "$TARGET_DIR"
   fi
 }
 
 reload_tmux() {
   local plugin_entrypoint="$TARGET_DIR/coding-agents-tmux.tmux"
-
-  if [ ! -f "$plugin_entrypoint" ]; then
-    plugin_entrypoint="$TARGET_DIR/opencode-tmux.tmux"
-  fi
 
   if ! command -v tmux >/dev/null 2>&1; then
     printf 'coding-agents-tmux: tmux is not installed; skipping reload\n'

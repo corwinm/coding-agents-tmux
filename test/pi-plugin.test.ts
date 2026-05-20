@@ -34,7 +34,7 @@ function setEnv(updates: Record<string, string | undefined>): () => void {
 }
 
 function installFakeTmux(script: string): { pathEntry: string; logPath: string } {
-  const dir = mkdtempSync(join(tmpdir(), "opencode-tmux-pi-plugin-fake-tmux-"));
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-fake-tmux-"));
   const tmuxPath = join(dir, "tmux");
   const logPath = join(dir, "tmux.log");
   const resolvedScript = script.replaceAll("__LOG_PATH__", logPath);
@@ -70,7 +70,7 @@ function readOnlyStateFile(stateDir: string): Record<string, unknown> {
 }
 
 test("Pi plugin refreshes tmux clients after writing state", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-pi-plugin-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "display-message" ]; then
   printf 'work:1.1\n'
@@ -85,7 +85,7 @@ exit 1
 `);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_PI_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
     TMUX_PANE: "%42",
   });
 
@@ -124,11 +124,10 @@ exit 1
   }
 });
 
-test("Pi plugin supports CODING_AGENTS_TMUX_PI_STATE_DIR as a state dir alias", async () => {
+test("Pi plugin supports CODING_AGENTS_TMUX_PI_STATE_DIR as a state dir override", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
-    OPENCODE_TMUX_PI_STATE_DIR: undefined,
     TMUX_PANE: undefined,
   });
 
@@ -166,7 +165,7 @@ test("Pi plugin supports CODING_AGENTS_TMUX_PI_STATE_DIR as a state dir alias", 
 });
 
 test("Pi plugin refreshes tmux clients after removing state on shutdown", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-pi-plugin-state-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "display-message" ]; then
   printf 'work:1.1\n'
@@ -181,7 +180,7 @@ exit 1
 `);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
-    OPENCODE_TMUX_PI_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
     TMUX_PANE: "%42",
   });
 

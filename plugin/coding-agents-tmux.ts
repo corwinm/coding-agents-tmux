@@ -5,7 +5,6 @@ import { join } from "node:path";
 
 const STATE_DIR =
   process.env.CODING_AGENTS_TMUX_STATE_DIR ??
-  process.env.OPENCODE_TMUX_STATE_DIR ??
   join(
     process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
     "coding-agents-tmux",
@@ -422,5 +421,3 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
     },
   };
 };
-
-export const OpencodeTmuxPlugin = CodingAgentsTmuxPlugin;

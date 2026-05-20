@@ -42,14 +42,10 @@ async function loadPlugin() {
   return import(`../plugin/coding-agents-tmux.ts?test=${Math.random()}`);
 }
 
-async function loadLegacyPluginAlias() {
-  return import(`../plugin/opencode-tmux.ts?test=${Math.random()}`);
-}
-
 test("plugin preserves waiting state for ambiguous session.status heartbeats", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-plugin-test-"));
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
   const restoreEnv = setEnv({
-    OPENCODE_TMUX_STATE_DIR: stateDir,
+    CODING_AGENTS_TMUX_STATE_DIR: stateDir,
     TMUX: undefined,
     TMUX_PANE: undefined,
   });
@@ -74,11 +70,10 @@ test("plugin preserves waiting state for ambiguous session.status heartbeats", a
   }
 });
 
-test("plugin supports CODING_AGENTS_TMUX_STATE_DIR as a state dir alias", async () => {
+test("plugin supports CODING_AGENTS_TMUX_STATE_DIR as a state dir override", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_STATE_DIR: stateDir,
-    OPENCODE_TMUX_STATE_DIR: undefined,
     TMUX: undefined,
     TMUX_PANE: undefined,
   });
@@ -101,37 +96,10 @@ test("plugin supports CODING_AGENTS_TMUX_STATE_DIR as a state dir alias", async 
   }
 });
 
-test("legacy plugin filename still re-exports the plugin", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-legacy-test-"));
+test("plugin switches back to running when session.status explicitly reports busy after a reply", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_STATE_DIR: stateDir,
-    OPENCODE_TMUX_STATE_DIR: undefined,
-    TMUX: undefined,
-    TMUX_PANE: undefined,
-  });
-
-  try {
-    const { OpencodeTmuxPlugin } = await loadLegacyPluginAlias();
-    const plugin = await OpencodeTmuxPlugin({
-      directory: "/tmp/project",
-      project: { name: "Project" },
-      client: { app: { log: async () => null } },
-    });
-
-    await plugin.event({ event: { type: "session.idle", timeUpdated: 100 } });
-
-    const state = readOnlyStateFile(stateDir);
-    assert.equal(state.status, "idle");
-    assert.equal(state.title, "Project");
-  } finally {
-    restoreEnv();
-  }
-});
-
-test("plugin switches back to running when session.status explicitly reports busy after a reply", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "opencode-tmux-plugin-test-"));
-  const restoreEnv = setEnv({
-    OPENCODE_TMUX_STATE_DIR: stateDir,
     TMUX: undefined,
     TMUX_PANE: undefined,
   });

@@ -62,7 +62,7 @@ function setEnv(updates: Record<string, string | undefined>): () => void {
 }
 
 function installFakeTmux(script: string): { pathEntry: string; logPath: string } {
-  const dir = mkdtempSync(join(tmpdir(), "opencode-tmux-fake-tmux-"));
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-fake-tmux-"));
   const tmuxPath = join(dir, "tmux");
   const logPath = join(dir, "tmux.log");
   const resolvedScript = script.replaceAll("__LOG_PATH__", logPath);
