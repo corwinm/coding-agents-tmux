@@ -1,6 +1,6 @@
 export type PaneTarget = `${string}:${number}.${number}`;
 
-export type AgentKind = "opencode" | "codex" | "pi" | "claude";
+export type AgentKind = "opencode" | "codex" | "pi" | "claude" | "kiro";
 
 export interface TmuxPane {
   sessionName: string;
@@ -61,6 +61,8 @@ export type RuntimeSource =
   | "claude-hook"
   | "claude-preview"
   | "claude-command"
+  | "kiro-preview"
+  | "kiro-command"
   | "unmapped";
 
 export interface RuntimeMatchInfo {
@@ -71,7 +73,7 @@ export interface RuntimeMatchInfo {
     | "descendant-recent"
     | "descendant-only"
     | "unmapped";
-  provider: "plugin" | "server" | "sqlite" | "codex" | "pi" | "claude" | "none";
+  provider: "plugin" | "server" | "sqlite" | "codex" | "pi" | "claude" | "kiro" | "none";
   heuristic: boolean;
 }
 

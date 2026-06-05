@@ -9,6 +9,7 @@ import {
   type CodexStateFile,
 } from "./codex.ts";
 import { attachRuntimeWithClaude, getClaudeStateDir } from "./claude.ts";
+import { attachRuntimeWithKiro } from "./kiro.ts";
 import { attachRuntimeWithPi } from "./pi.ts";
 import { capturePanePreview } from "./tmux.ts";
 import {
@@ -1475,28 +1476,14 @@ export async function attachRuntimeToPanes(
   const codexPanes = panes.filter((entry) => entry.detection.agent === "codex");
   const piPanes = panes.filter((entry) => entry.detection.agent === "pi");
   const claudePanes = panes.filter((entry) => entry.detection.agent === "claude");
-
-  if (codexPanes.length === 0 && piPanes.length === 0 && claudePanes.length === 0) {
-    return attachRuntimeWithOpencodeProvider(panes, options);
-  }
-
-  if (opencodePanes.length === 0 && piPanes.length === 0 && claudePanes.length === 0) {
-    return attachRuntimeWithCodex(codexPanes);
-  }
-
-  if (opencodePanes.length === 0 && codexPanes.length === 0 && claudePanes.length === 0) {
-    return attachRuntimeWithPi(piPanes);
-  }
-
-  if (opencodePanes.length === 0 && codexPanes.length === 0 && piPanes.length === 0) {
-    return attachRuntimeWithClaude(claudePanes);
-  }
+  const kiroPanes = panes.filter((entry) => entry.detection.agent === "kiro");
 
   const resultGroups = await Promise.all([
     opencodePanes.length > 0 ? attachRuntimeWithOpencodeProvider(opencodePanes, options) : [],
     codexPanes.length > 0 ? attachRuntimeWithCodex(codexPanes) : [],
     piPanes.length > 0 ? attachRuntimeWithPi(piPanes) : [],
     claudePanes.length > 0 ? attachRuntimeWithClaude(claudePanes) : [],
+    kiroPanes.length > 0 ? attachRuntimeWithKiro(kiroPanes) : [],
   ]);
   const resultsByTarget = new Map(resultGroups.flat().map((entry) => [entry.pane.target, entry]));
 
