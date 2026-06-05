@@ -101,6 +101,8 @@ exit 1
 
     assert.equal(summaries[0]?.runtime.source, "kiro-preview");
     assert.equal(summaries[0]?.runtime.status, "waiting-question");
+    assert.equal(summaries[0]?.runtime.session?.title, "kiro-project");
+    assert.equal(summaries[0]?.runtime.session?.directory, "/tmp/kiro-project");
   } finally {
     restoreEnv();
   }
@@ -115,5 +117,8 @@ test("Kiro command fallback marks unmatched panes as idle", async () => {
   assert.equal(summaries[0]?.runtime.status, "idle");
   assert.equal(summaries[0]?.runtime.activity, "idle");
   assert.equal(summaries[0]?.runtime.match.provider, "kiro");
+  assert.equal(summaries[0]?.runtime.session?.id, "kiro:work:1.0");
+  assert.equal(summaries[0]?.runtime.session?.title, "kiro-project");
+  assert.equal(summaries[0]?.runtime.session?.directory, "/tmp/kiro-project");
   assert.match(summaries[0]?.runtime.detail ?? "", /assuming idle/);
 });

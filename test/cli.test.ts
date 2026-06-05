@@ -833,7 +833,7 @@ exit 1
     assert.equal(kiroResult.exitCode, 0);
     assert.equal(
       kiroResult.stdoutText.trim(),
-      "work:1.7\tidle\tidle\tkiro-command\t0\t(unmatched)\tKiro CLI\t/tmp/kiro-project",
+      "work:1.7\tidle\tidle\tkiro-command\t0\tkiro-project\tKiro CLI\t/tmp/kiro-project",
     );
   } finally {
     restoreEnv();

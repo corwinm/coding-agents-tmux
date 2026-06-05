@@ -1,5 +1,13 @@
+import { basename } from "node:path";
+
 import { capturePanePreview } from "./tmux.ts";
-import type { DiscoveredPane, PaneRuntimeSummary, RuntimeInfo, TmuxPane } from "../types.ts";
+import type {
+  DiscoveredPane,
+  PaneRuntimeSummary,
+  RuntimeInfo,
+  SessionMatch,
+  TmuxPane,
+} from "../types.ts";
 
 function createKiroRuntimeInfo(input: {
   activity: RuntimeInfo["activity"];
@@ -7,6 +15,7 @@ function createKiroRuntimeInfo(input: {
   source: RuntimeInfo["source"];
   heuristic: boolean;
   detail: string;
+  session: SessionMatch;
 }): RuntimeInfo {
   return {
     activity: input.activity,
@@ -17,8 +26,19 @@ function createKiroRuntimeInfo(input: {
       provider: "kiro",
       heuristic: input.heuristic,
     },
-    session: null,
+    session: input.session,
     detail: input.detail,
+  };
+}
+
+function createKiroPaneSession(pane: TmuxPane): SessionMatch {
+  const title = basename(pane.currentPath) || pane.paneTitle.trim() || "Kiro CLI";
+
+  return {
+    id: `kiro:${pane.target}`,
+    directory: pane.currentPath,
+    title,
+    timeUpdated: Date.now(),
   };
 }
 
@@ -69,6 +89,7 @@ function classifyKiroPreview(
 
 function createKiroPreviewRuntime(
   preview: Pick<RuntimeInfo, "activity" | "detail" | "status">,
+  pane: TmuxPane,
 ): RuntimeInfo {
   return createKiroRuntimeInfo({
     activity: preview.activity,
@@ -76,14 +97,15 @@ function createKiroPreviewRuntime(
     source: "kiro-preview",
     heuristic: true,
     detail: preview.detail,
+    session: createKiroPaneSession(pane),
   });
 }
 
-async function loadKiroPreviewRuntime(target: TmuxPane["target"]): Promise<RuntimeInfo | null> {
+async function loadKiroPreviewRuntime(pane: TmuxPane): Promise<RuntimeInfo | null> {
   try {
-    const lines = await capturePanePreview(target, 24);
+    const lines = await capturePanePreview(pane.target, 24);
     const preview = classifyKiroPreview(lines);
-    return preview ? createKiroPreviewRuntime(preview) : null;
+    return preview ? createKiroPreviewRuntime(preview, pane) : null;
   } catch {
     return null;
   }
@@ -94,7 +116,7 @@ export async function attachRuntimeWithKiro(
 ): Promise<PaneRuntimeSummary[]> {
   return Promise.all(
     panes.map(async (entry) => {
-      const previewRuntime = await loadKiroPreviewRuntime(entry.pane.target);
+      const previewRuntime = await loadKiroPreviewRuntime(entry.pane);
 
       if (previewRuntime) {
         return {
@@ -111,6 +133,7 @@ export async function attachRuntimeWithKiro(
           source: "kiro-command",
           heuristic: false,
           detail: `detected ${entry.pane.currentCommand} process in tmux pane; assuming idle without stronger Kiro state`,
+          session: createKiroPaneSession(entry.pane),
         }),
       };
     }),

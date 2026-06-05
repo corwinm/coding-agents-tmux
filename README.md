@@ -417,6 +417,7 @@ Kiro runtime support is intentionally simple and does not require any Kiro agent
 - if a tmux pane is running a Kiro CLI process, it is classified as `idle` unless preview text shows an obvious waiting prompt
 - pane preview heuristics can detect obvious question or approval prompts as waiting states
 - no Kiro hooks are installed or required; Kiro support is based on tmux process/title detection and preview fallback only
+- the session column uses a lightweight pane-derived label, usually the current directory basename
 
 This means any `kiro-cli` pane can be discovered and switched to without naming or modifying a Kiro custom agent.
 

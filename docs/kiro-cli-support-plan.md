@@ -50,6 +50,7 @@ Kiro CLI does have a hook system, but Kiro hooks are configured inside named age
 - 2026-06-05: Updated agent filters/help to include `kiro`.
 - 2026-06-05: Added Kiro tests and updated README with detection-only setup and fallback behavior.
 - 2026-06-05: Deferred hook-backed Kiro state because requiring a named Kiro agent is not desirable for the default UX.
+- 2026-06-05: Changed command-only Kiro panes to default to `idle` and added a lightweight pane-derived pseudo-session so list output does not show `(unmatched)` for successfully detected Kiro panes. The pseudo-session title prefers the current directory basename because Kiro does not appear to update tmux pane titles reliably.
 
 ## Detailed task list
 
@@ -101,8 +102,9 @@ Create `src/core/kiro.ts` as a lightweight runtime module.
 Responsibilities:
 
 - classify preview text when Kiro appears to be waiting on user input
-- fall back to command-backed `running` when preview is inconclusive
+- fall back to command-backed `idle` when preview is inconclusive
 - never require Kiro config files, Kiro hooks, or a named Kiro custom agent
+- attach a lightweight pseudo-session from the tmux pane path/title so detected Kiro panes do not render as `(unmatched)`
 
 Implemented runtime source mapping:
 
@@ -123,7 +125,12 @@ Default runtime mapping:
     provider: "kiro",
     heuristic: false
   },
-  session: null,
+  session: {
+    id: `kiro:${pane.target}`,
+    directory: pane.currentPath,
+    title: basename(pane.currentPath) || pane.paneTitle || "Kiro CLI",
+    timeUpdated: Date.now()
+  },
   detail: "detected kiro-cli process in tmux pane; assuming idle without stronger Kiro state"
 }
 ```
