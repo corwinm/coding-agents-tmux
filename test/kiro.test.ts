@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { attachRuntimeToPanes } from "../src/core/opencode.ts";
+import { attachRuntimeToPanes } from "../src/core/runtime.ts";
 import type { DiscoveredPane, TmuxPane } from "../src/types.ts";
 
 function createPane(overrides: Partial<TmuxPane> = {}): TmuxPane {

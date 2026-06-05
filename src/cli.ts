@@ -26,12 +26,8 @@ import {
   installCodexIntegration,
   persistCodexHookState,
 } from "./core/codex.ts";
-import {
-  attachRuntimeToPanes,
-  buildInspectDebugInfo,
-  buildServerMapTemplate,
-  getRuntimeProviderHelpText,
-} from "./core/opencode.ts";
+import { buildInspectDebugInfo, buildServerMapTemplate } from "./core/opencode.ts";
+import { attachRuntimeToPanes, getRuntimeProviderHelpText } from "./core/runtime.ts";
 import {
   discoverAgentPanes,
   findDiscoveredPaneByTarget,

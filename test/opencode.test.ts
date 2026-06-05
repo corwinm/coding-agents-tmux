@@ -5,12 +5,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import {
-  attachRuntimeToPanes,
-  buildServerMapTemplate,
-  describeServerMapInput,
-  getRuntimeProviderHelpText,
-} from "../src/core/opencode.ts";
+import { buildServerMapTemplate, describeServerMapInput } from "../src/core/opencode.ts";
+import { attachRuntimeToPanes, getRuntimeProviderHelpText } from "../src/core/runtime.ts";
 import type { DiscoveredPane, PaneRuntimeSummary, TmuxPane } from "../src/types.ts";
 
 function createPane(overrides: Partial<TmuxPane> = {}): TmuxPane {

@@ -76,7 +76,7 @@ Kiro CLI does have a hook system, but Kiro hooks are configured inside named age
   - `"kiro-command"`
 - [x] Add `"kiro"` to `RuntimeMatchInfo.provider`
 - [x] Add a Kiro-specific runtime module: `src/core/kiro.ts`
-- [x] Update `src/core/opencode.ts` dispatch so Kiro panes are handled explicitly and are not sent through OpenCode providers
+- [x] Update `src/core/runtime.ts` dispatch so Kiro panes are handled explicitly and are not sent through OpenCode providers
 - [x] Keep existing OpenCode, Codex, Pi, and Claude behavior unchanged
 
 ### 2. Kiro pane detection
@@ -206,6 +206,7 @@ Important files edited:
 
 - `src/types.ts`
 - `src/core/tmux.ts`
+- `src/core/runtime.ts`
 - `src/core/opencode.ts`
 - `src/core/kiro.ts`
 - `src/cli.ts`
