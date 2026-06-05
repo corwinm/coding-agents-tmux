@@ -11,7 +11,7 @@ import {
   readClaudeStates,
   updateClaudeSettings,
 } from "../src/core/claude.ts";
-import { attachRuntimeToPanes } from "../src/core/opencode.ts";
+import { attachRuntimeToPanes } from "../src/core/runtime.ts";
 import type { DiscoveredPane, TmuxPane } from "../src/types.ts";
 
 function createPane(overrides: Partial<TmuxPane> = {}): TmuxPane {

@@ -9,7 +9,7 @@ It helps you:
 - show the current pane state plus a background session summary in the status line
 - use local plugin and hook state instead of relying only on sqlite or pane heuristics
 
-Today the strongest runtime support is still for `opencode`, and the project also supports `codex`, `pi`, and `claude` panes for discovery, switching, popup navigation, and status summaries.
+Today the strongest runtime support is still for `opencode`, and the project also supports `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
 
 ## Rename status
 
@@ -314,9 +314,9 @@ set -g @coding-agents-tmux-provider 'plugin'
 
 ## Pi
 
-`pi` panes are detected from the live tmux pane command and common title patterns, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode`, `codex`, and `claude` panes.
+`pi` panes are detected from the live tmux pane command and common title patterns, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode`, `codex`, `claude`, and `kiro` panes.
 
-Use `--agent opencode`, `--agent codex`, `--agent pi`, `--agent claude`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
+Use `--agent opencode`, `--agent codex`, `--agent pi`, `--agent claude`, `--agent kiro`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
 
 For the best Pi runtime fidelity, let the tmux plugin install the bundled Pi extension automatically. It is linked into:
 
@@ -341,9 +341,9 @@ After first install or update, restart Pi sessions in tmux so they load the bund
 
 ## Codex
 
-`codex` panes are detected from the live tmux pane command, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode`, `pi`, and `claude` panes.
+`codex` panes are detected from the live tmux pane command, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode`, `pi`, `claude`, and `kiro` panes.
 
-Use `--agent opencode`, `--agent codex`, `--agent pi`, `--agent claude`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
+Use `--agent opencode`, `--agent codex`, `--agent pi`, `--agent claude`, `--agent kiro`, or `--agent all` on `list`, `switch`, `popup`, `popup-ui`, and `status` when you want to narrow mixed tmux environments.
 
 Default Codex runtime support is intentionally coarse:
 
@@ -371,7 +371,7 @@ With hooks enabled, `coding-agents-tmux` can mark Codex panes as `idle` or `wait
 
 ## Claude Code
 
-`claude` panes are detected from the live tmux pane command and common title patterns, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode`, `codex`, and `pi` panes.
+`claude` panes are detected from the live tmux pane command and common title patterns, so they show up in `list`, `switch`, `popup`, and `status` alongside `opencode`, `codex`, `pi`, and `kiro` panes.
 
 Default Claude Code runtime support is intentionally coarse:
 
@@ -407,6 +407,19 @@ set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude'
 4. Restart `claude` sessions in tmux so they begin publishing hook-backed state.
 
 With hooks enabled, `coding-agents-tmux` can mark Claude panes as `idle`, `waiting-question`, or `waiting-input` between turns instead of showing every Claude pane as continuously `running`.
+
+## Kiro CLI
+
+`kiro` panes are detected from live tmux pane commands such as `kiro-cli`, `kiro-cli-chat`, `kiro-cli-term`, and `kiro`, plus common title patterns. They show up in `list`, `switch`, `popup`, and `status` alongside the other supported coding agents.
+
+Kiro runtime support is intentionally simple and does not require any Kiro agent configuration:
+
+- if a tmux pane is running a Kiro CLI process, it is classified as `idle` unless preview text shows an obvious waiting prompt
+- pane preview heuristics can detect obvious question or approval prompts as waiting states
+- no Kiro hooks are installed or required; Kiro support is based on tmux process/title detection and preview fallback only
+- the session column uses a lightweight pane-derived label, usually the current directory basename
+
+This means any `kiro-cli` pane can be discovered and switched to without naming or modifying a Kiro custom agent.
 
 ## Troubleshooting
 
@@ -447,6 +460,7 @@ Useful commands:
 ./bin/coding-agents-tmux list --agent codex
 ./bin/coding-agents-tmux list --agent pi
 ./bin/coding-agents-tmux list --agent claude
+./bin/coding-agents-tmux list --agent kiro
 ./bin/coding-agents-tmux list --provider plugin --waiting
 ./bin/coding-agents-tmux inspect <target> --provider plugin
 ./bin/coding-agents-tmux status --provider plugin --style tmux

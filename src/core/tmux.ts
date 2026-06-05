@@ -105,6 +105,7 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
   const codexReasons: string[] = [];
   const piReasons: string[] = [];
   const claudeReasons: string[] = [];
+  const kiroReasons: string[] = [];
   const candidates: Array<{ agent: AgentKind; reasons: string[]; score: number }> = [];
 
   if (title === "OpenCode") {
@@ -135,6 +136,8 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
     lowerTitle === "pi" || lowerTitle.startsWith("pi - ") || title.startsWith("π - ");
   const hasClaudeTitleHint =
     normalizedLowerTitle === "claude" || normalizedLowerTitle.startsWith("claude code");
+  const hasKiroTitleHint =
+    normalizedLowerTitle === "kiro" || normalizedLowerTitle.startsWith("kiro cli");
 
   if (hasPiTitleHint) {
     piReasons.push("title:Pi");
@@ -152,6 +155,14 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
 
   if (matchesCommand(command, "claude")) {
     claudeReasons.push("command:claude");
+  }
+
+  if (hasKiroTitleHint) {
+    kiroReasons.push("title:Kiro");
+  }
+
+  if (matchesCommand(command, "kiro")) {
+    kiroReasons.push("command:kiro");
   }
 
   if (opencodeReasons.some((reason) => !reason.startsWith("path:"))) {
@@ -187,6 +198,18 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
       reasons: claudeReasons,
       score: claudeReasons.some((reason) => reason.startsWith("command:"))
         ? hasClaudeTitleHint
+          ? 5
+          : 4
+        : 4,
+    });
+  }
+
+  if (kiroReasons.length > 0) {
+    candidates.push({
+      agent: "kiro",
+      reasons: kiroReasons,
+      score: kiroReasons.some((reason) => reason.startsWith("command:"))
+        ? hasKiroTitleHint
           ? 5
           : 4
         : 4,

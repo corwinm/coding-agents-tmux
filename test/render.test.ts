@@ -312,7 +312,7 @@ test("renderCompactPaneList falls back to unmatched and untitled labels", () => 
   );
 });
 
-test("renderPaneTable and renderCompactPaneList handle mixed OpenCode, Codex, Pi, and Claude panes", () => {
+test("renderPaneTable and renderCompactPaneList handle mixed OpenCode, Codex, Pi, Claude, and Kiro panes", () => {
   const opencodePane = createSummary("idle", {
     pane: createPane({ target: "work:1.0" }),
   });
@@ -358,16 +358,38 @@ test("renderPaneTable and renderCompactPaneList handle mixed OpenCode, Codex, Pi
       session: null,
     }),
   });
+  const kiroPane = createSummary("idle", {
+    pane: createPane({
+      target: "work:1.4",
+      paneIndex: 4,
+      paneTitle: "Kiro CLI",
+      currentCommand: "kiro-cli",
+    }),
+    detection: { agent: "kiro", confidence: "high", reasons: ["title:Kiro", "command:kiro"] },
+    runtime: createRuntime("idle", {
+      source: "kiro-command",
+      match: { strategy: "exact", provider: "kiro", heuristic: false },
+      session: null,
+    }),
+  });
 
-  const tableOutput = renderPaneTable([opencodePane, codexPane, piPane, claudePane]);
-  const compactOutput = renderCompactPaneList([opencodePane, codexPane, piPane, claudePane]);
+  const tableOutput = renderPaneTable([opencodePane, codexPane, piPane, claudePane, kiroPane]);
+  const compactOutput = renderCompactPaneList([
+    opencodePane,
+    codexPane,
+    piPane,
+    claudePane,
+    kiroPane,
+  ]);
 
   assert.match(tableOutput, /opencode/);
   assert.match(tableOutput, /codex/);
   assert.match(tableOutput, /pi/);
   assert.match(tableOutput, /claude/);
+  assert.match(tableOutput, /kiro/);
   assert.match(compactOutput, /work:1\.2\tbusy\trunning\tpi-command/);
   assert.match(compactOutput, /work:1\.3\tbusy\trunning\tclaude-command/);
+  assert.match(compactOutput, /work:1\.4\tidle\tidle\tkiro-command/);
 });
 
 test("renderInspectResult includes pane, detection, and session details", () => {
