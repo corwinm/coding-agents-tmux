@@ -2,6 +2,8 @@
 
 `tmux` integration for terminal coding agent sessions.
 
+![coding-agents-tmux demo](docs/assets/coding-agents-tmux-demo.gif)
+
 It helps you:
 
 - open a chooser of active coding agent panes
@@ -9,11 +11,7 @@ It helps you:
 - show the current pane state plus a background session summary in the status line
 - use local plugin and hook state instead of relying only on sqlite or pane heuristics
 
-Today the strongest runtime support is still for `opencode`, and the project also supports `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
-
-## Rename status
-
-This project was previously named `opencode-tmux`. The current public name is `coding-agents-tmux`.
+This project was originally designed for `opencode` but has been extended to support `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
 
 ## Install
 
@@ -189,35 +187,31 @@ When enabled, the status line shows two views at once:
 - the current pane state
 - a compact summary of the remaining detected coding-agent panes
 
-Example output:
+Example output, rendered as an image so the Nerd Font icons show on GitHub:
 
-```text
-󰚩 |  idle |   
-󰚩 |  busy | 
-󰚩 |  new | none
-```
+![coding-agents-tmux status line examples](docs/assets/status-line-examples.png)
 
-You can also replace the default icon with your own label or a different Nerd Font icon:
+The default prefix is the Nerd Font robot glyph shown in the rendered examples above. You can also replace it with your own label:
 
 ```tmux
-set -g @coding-agents-tmux-status-prefix '󰚩'
+set -g @coding-agents-tmux-status-prefix 'agents'
 ```
 
 This means:
 
-- `󰚩 |  idle |   ` means the focused pane is idle and the background panes are waiting, busy, and idle in target order
-- `󰚩 |  busy | ` means the focused pane is busy and more than eight background panes are shown in compact symbol mode
-- `󰚩 |  new | none` means the focused pane is newly started and there are no other detected coding-agent panes
+- The first row means the focused pane is idle and the background panes are waiting, busy, and idle in target order.
+- The second row means the focused pane is busy and more than eight background panes are shown in compact symbol mode.
+- The third row means the focused pane is newly started and there are no other detected coding-agent panes.
 
 If your active pane is not a detected coding-agent pane, the status line uses the strongest detected coding-agent pane in the current tmux window. Other panes are counted as background work.
 
 Background pane symbols are shown in a stable target order:
 
-- `` waiting
-- `` busy
-- `` idle
-- `` new
-- `` unknown
+- <img src="docs/assets/icons/status-waiting.png" width="14" alt="waiting icon"> waiting
+- <img src="docs/assets/icons/status-busy.png" width="14" alt="busy icon"> busy
+- <img src="docs/assets/icons/status-idle.png" width="14" alt="idle icon"> idle
+- <img src="docs/assets/icons/status-new.png" width="14" alt="new icon"> new
+- <img src="docs/assets/icons/status-unknown.png" width="14" alt="unknown icon"> unknown
 
 By default the status line adds spaces between background pane symbols for readability. If there are more than eight background panes, it automatically switches to a compact no-space form.
 
@@ -257,7 +251,7 @@ set -ag status-right " #{@coding-agents-tmux-status-inline-format}"
 If you want to fully control the wrapper yourself, use the plain text export instead:
 
 ```tmux
-set -ag status-right " #[fg=colour81]󰚩 #[default]#{@coding-agents-tmux-status-text}"
+set -ag status-right " #[fg=colour81]agents #[default]#{@coding-agents-tmux-status-text}"
 ```
 
 `manual` mode is the default. `#{E:@catppuccin_status_agents}` gives Catppuccin users a native-looking module, `#{@coding-agents-tmux-status-inline-format}` gives other themes a tone-aware inline segment, and `#{@coding-agents-tmux-status-text}` gives a plain live summary text export for fully custom wrappers. `append` mode restores the old behavior and appends automatically.
@@ -286,7 +280,7 @@ Available tmux options:
 - `@coding-agents-tmux-status-mode` `append` or `manual`, default `manual`
 - `@coding-agents-tmux-status-position` `right` or `left`, default `right`
 - `@coding-agents-tmux-status-interval` tmux `status-interval`, default `0`
-- `@coding-agents-tmux-status-prefix` label shown before the status summary, default `󰚩`
+- `@coding-agents-tmux-status-prefix` label shown before the status summary, default Nerd Font robot glyph
 - `@coding-agents-tmux-status-color-neutral` tmux color for the prefix and separators, default `colour252`
 - `@coding-agents-tmux-status-color-idle` tmux color for idle state, default `colour70`
 - `@coding-agents-tmux-status-color-busy` tmux color for busy state, default `colour220`
