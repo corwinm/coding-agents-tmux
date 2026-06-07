@@ -330,12 +330,12 @@ function isManagedHookGroup(group: CodexHookMatcherGroup): boolean {
 
 export function updateCodexConfig(existing: string): string {
   const lines = existing.split(/\r?\n/);
-  const dottedKeyIndex = lines.findIndex((line) => /^\s*features\.codex_hooks\s*=/.test(line));
-
-  if (dottedKeyIndex >= 0) {
-    lines[dottedKeyIndex] = "features.codex_hooks = true";
-    return `${lines.join("\n").trimEnd()}\n`;
-  }
+  const dottedHooksIndices = lines
+    .map((line, index) => (/^\s*features\.hooks\s*=/.test(line) ? index : -1))
+    .filter((index) => index >= 0);
+  const deprecatedDottedHooksIndices = lines
+    .map((line, index) => (/^\s*features\.codex_hooks\s*=/.test(line) ? index : -1))
+    .filter((index) => index >= 0);
 
   let featuresIndex = -1;
   let nextSectionIndex = lines.length;
@@ -356,22 +356,54 @@ export function updateCodexConfig(existing: string): string {
     }
   }
 
+  const featureHooksIndices: number[] = [];
+  const deprecatedFeatureHooksIndices: number[] = [];
+
   if (featuresIndex >= 0) {
     for (let index = featuresIndex + 1; index < nextSectionIndex; index += 1) {
-      if (/^\s*codex_hooks\s*=/.test(lines[index] ?? "")) {
-        lines[index] = "codex_hooks = true";
-        return `${lines.join("\n").trimEnd()}\n`;
+      if (/^\s*hooks\s*=/.test(lines[index] ?? "")) {
+        featureHooksIndices.push(index);
+      } else if (/^\s*codex_hooks\s*=/.test(lines[index] ?? "")) {
+        deprecatedFeatureHooksIndices.push(index);
       }
     }
+  }
 
-    lines.splice(nextSectionIndex, 0, "codex_hooks = true");
+  const targetIndex =
+    dottedHooksIndices[0] ??
+    featureHooksIndices[0] ??
+    deprecatedDottedHooksIndices[0] ??
+    deprecatedFeatureHooksIndices[0];
+
+  if (targetIndex !== undefined) {
+    const targetLine =
+      deprecatedFeatureHooksIndices.includes(targetIndex) ||
+      featureHooksIndices.includes(targetIndex)
+        ? "hooks = true"
+        : "features.hooks = true";
+    lines[targetIndex] = targetLine;
+
+    const duplicateIndices = new Set([
+      ...dottedHooksIndices,
+      ...featureHooksIndices,
+      ...deprecatedDottedHooksIndices,
+      ...deprecatedFeatureHooksIndices,
+    ]);
+    duplicateIndices.delete(targetIndex);
+
+    return `${lines
+      .filter((_, index) => !duplicateIndices.has(index))
+      .join("\n")
+      .trimEnd()}\n`;
+  }
+
+  if (featuresIndex >= 0) {
+    lines.splice(nextSectionIndex, 0, "hooks = true");
     return `${lines.join("\n").trimEnd()}\n`;
   }
 
   const trimmed = existing.trimEnd();
-  return trimmed
-    ? `${trimmed}\n\n[features]\ncodex_hooks = true\n`
-    : "[features]\ncodex_hooks = true\n";
+  return trimmed ? `${trimmed}\n\n[features]\nhooks = true\n` : "[features]\nhooks = true\n";
 }
 
 export function updateCodexHooks(existing: string, command: string): string {

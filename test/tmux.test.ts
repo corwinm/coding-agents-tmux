@@ -9,6 +9,7 @@ import {
   captureWindowPreview,
   buildSwitchToPaneCommand,
   detectAgentPane,
+  discoverAgentPanes,
   discoverAgentPanesFromList,
   getCurrentTmuxTarget,
   listAllPanes,
@@ -105,16 +106,18 @@ test("detectAgentPane recognizes OpenCode, Codex, Pi, Claude, Kiro, and no-signa
     },
   );
 
-  assert.deepEqual(
-    detectAgentPane(
-      createPane({ paneTitle: "shell", currentCommand: "codex-aarch64-apple-darwin" }),
-    ),
-    {
+  for (const currentCommand of [
+    "codex",
+    "codex.exe",
+    "codex-aarch64-apple-darwin",
+    "codex-x86_64-unknown-linux-musl",
+  ]) {
+    assert.deepEqual(detectAgentPane(createPane({ paneTitle: "shell", currentCommand })), {
       agent: "codex",
       confidence: "medium",
       reasons: ["command:codex"],
-    },
-  );
+    });
+  }
 
   assert.deepEqual(detectAgentPane(createPane({ paneTitle: "π - work", currentCommand: "pi" })), {
     agent: "pi",
@@ -253,6 +256,58 @@ test("discoverAgentPanesFromList filters non-agent panes and sorts targets", () 
     discoverAgentPanesFromList(panes).map((entry) => entry.pane.target),
     ["work:1.1", "work:1.2", "work:1.3", "work:1.35", "work:1.4", "work:2.1"],
   );
+});
+
+test("discoverAgentPanes detects Codex launched through package-manager wrappers", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then
+  printf 'work\t1\t0\t%%1\tproject\tnode\t/tmp/project\t1\t/dev/ttys001\n'
+  printf 'work\t1\t1\t%%2\tproject\tpnpm\t/tmp/project\t0\t/dev/ttys002\n'
+  printf 'work\t1\t2\t%%3\tproject\tnode\t/tmp/codex-project\t0\t/dev/ttys003\n'
+  exit 0
+fi
+exit 1
+`);
+  const psPath = join(fakeTmux.pathEntry, "ps");
+  writeFileSync(
+    psPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+case "$2" in
+  /dev/ttys001)
+    printf '/opt/node /Users/example/.npm/bin/codex\n'
+    exit 0
+    ;;
+  /dev/ttys002)
+    printf '/opt/node /Users/example/.pnpm/global/5/node_modules/@openai/codex/bin/codex.js\n'
+    exit 0
+    ;;
+  /dev/ttys003)
+    printf '/opt/node /tmp/codex-project/scripts/dev.js\n'
+    exit 0
+    ;;
+esac
+exit 1
+`,
+    "utf8",
+  );
+  chmodSync(psPath, 0o755);
+  const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+
+  try {
+    const panes = await discoverAgentPanes();
+
+    assert.deepEqual(
+      panes.map((pane) => pane.pane.target),
+      ["work:1.0", "work:1.1"],
+    );
+    assert.equal(panes[0]?.detection.agent, "codex");
+    assert.deepEqual(panes[0]?.detection.reasons, ["process:codex"]);
+    assert.equal(panes[1]?.detection.agent, "codex");
+    assert.deepEqual(panes[1]?.detection.reasons, ["process:codex"]);
+  } finally {
+    restoreEnv();
+  }
 });
 
 test("normalizeCapturedPaneLines strips ANSI escapes, expands tabs, and preserves internal blanks", () => {

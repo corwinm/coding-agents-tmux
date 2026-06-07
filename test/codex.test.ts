@@ -187,16 +187,30 @@ test("readCodexStates supports env override and default state root", () => {
 });
 
 test("updateCodexConfig enables hooks in existing or empty config files", () => {
-  assert.equal(updateCodexConfig(""), "[features]\ncodex_hooks = true\n");
+  assert.equal(updateCodexConfig(""), "[features]\nhooks = true\n");
+  assert.equal(
+    updateCodexConfig(
+      '[features]\nanalytics = true\nhooks = false\n[profiles.work]\nmodel = "gpt-5"\n',
+    ),
+    '[features]\nanalytics = true\nhooks = true\n[profiles.work]\nmodel = "gpt-5"\n',
+  );
+  assert.equal(
+    updateCodexConfig('model = "gpt-5"\n'),
+    'model = "gpt-5"\n\n[features]\nhooks = true\n',
+  );
+});
+
+test("updateCodexConfig migrates deprecated codex_hooks config keys", () => {
+  assert.equal(updateCodexConfig("features.codex_hooks = false\n"), "features.hooks = true\n");
   assert.equal(
     updateCodexConfig(
       '[features]\nanalytics = true\ncodex_hooks = false\n[profiles.work]\nmodel = "gpt-5"\n',
     ),
-    '[features]\nanalytics = true\ncodex_hooks = true\n[profiles.work]\nmodel = "gpt-5"\n',
+    '[features]\nanalytics = true\nhooks = true\n[profiles.work]\nmodel = "gpt-5"\n',
   );
   assert.equal(
-    updateCodexConfig('model = "gpt-5"\n'),
-    'model = "gpt-5"\n\n[features]\ncodex_hooks = true\n',
+    updateCodexConfig("[features]\nhooks = false\ncodex_hooks = true\n"),
+    "[features]\nhooks = true\n",
   );
 });
 
@@ -258,7 +272,7 @@ test("installCodexIntegration writes config.toml and hooks.json under CODEX_HOME
     const hooks = readFileSync(result.hooksPath, "utf8");
 
     assert.match(config, /\[features\]/);
-    assert.match(config, /codex_hooks = true/);
+    assert.match(config, /^hooks = true$/m);
     assert.match(hooks, /SessionStart/);
     assert.match(hooks, /codex-hook-state/);
   } finally {
