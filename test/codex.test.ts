@@ -97,6 +97,7 @@ test("buildCodexHooksTemplate emits all hook events with the ingest command", ()
     "SessionStart",
     "UserPromptSubmit",
     "PreToolUse",
+    "PermissionRequest",
     "PostToolUse",
     "Stop",
   ]);
@@ -128,6 +129,33 @@ test("persistCodexHookState classifies multiple-choice prompts as waiting-questi
 
     assert.equal(states[0]?.status, "waiting-question");
     assert.equal(states[0]?.detail, "Codex is waiting for a multiple-choice response");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("persistCodexHookState classifies permission prompts as waiting-input", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    await persistCodexHookState(
+      JSON.stringify({
+        hook_event_name: "PermissionRequest",
+        cwd: "/tmp/codex-project",
+        session_id: "codex-session",
+        tool_name: "Bash",
+      }),
+    );
+
+    const states = readCodexStates();
+
+    assert.equal(states[0]?.status, "waiting-input");
+    assert.equal(states[0]?.activity, "busy");
+    assert.equal(states[0]?.detail, "Codex is waiting for permission to run Bash");
   } finally {
     restoreEnv();
   }
@@ -256,6 +284,7 @@ test("updateCodexHooks merges managed hooks without dropping existing user hooks
     "SessionStart",
     "UserPromptSubmit",
     "PreToolUse",
+    "PermissionRequest",
     "PostToolUse",
   ]);
 });
@@ -310,6 +339,165 @@ exit 1
     assert.equal(summaries[0]?.runtime.source, "codex-preview");
     assert.equal(summaries[0]?.runtime.match.heuristic, true);
     assert.equal(summaries[0]?.runtime.detail, "Codex is ready for a new prompt");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("Codex preview classifies visible permission prompts as waiting-input", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '╭──────────────────────────────────────────────╮\n'
+  printf '│ >_ OpenAI Codex (v0.137.0)                   │\n'
+  printf '│ model:     gpt-5.5 medium   /model to change │\n'
+  printf '╰──────────────────────────────────────────────╯\n'
+  printf '\n'
+  printf 'Command Approval Required\n'
+  printf 'codex wants to run:\n'
+  printf 'npm install express\n'
+  printf '[a] Accept once\n'
+  printf '[d] Decline\n'
+  printf 'Press enter to confirm or esc to cancel\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([createDiscoveredCodexPane()], {
+      provider: "auto",
+    });
+
+    assert.equal(summaries[0]?.runtime.status, "waiting-input");
+    assert.equal(summaries[0]?.runtime.activity, "busy");
+    assert.equal(summaries[0]?.runtime.source, "codex-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Codex is waiting for permission input");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("Codex preview classifies stale permission prompts before the active session as idle", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf 'Hooks need review\n'
+  printf '›    Review hooks\n'
+  printf '     Trust all and continue\n'
+  printf 'Press enter to confirm or esc to go back\n'
+  printf '╭──────────────────────────────────────────────╮\n'
+  printf '│ >_ OpenAI Codex (v0.137.0)                   │\n'
+  printf '│ model:     gpt-5.5 medium   /model to change │\n'
+  printf '╰──────────────────────────────────────────────╯\n'
+  printf '\n'
+  printf '› Tell me about this project\n'
+  printf '\n'
+  printf '• This project tracks coding-agent panes in tmux.\n'
+  printf '\n'
+  printf '› Improve documentation in @filename\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([createDiscoveredCodexPane()], {
+      provider: "auto",
+    });
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "codex-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Codex is idle between turns");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("Codex preview classifies existing sessions with a visible last prompt as idle", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '╭──────────────────────────────────────────────╮\n'
+  printf '│ >_ OpenAI Codex (v0.137.0)                   │\n'
+  printf '│ model:     gpt-5.5 medium   /model to change │\n'
+  printf '╰──────────────────────────────────────────────╯\n'
+  printf '\n'
+  printf '› Tell me about this project\n'
+  printf '\n'
+  printf '• This project tracks coding-agent panes in tmux.\n'
+  printf '\n'
+  printf '› Write tests for @filename\n'
+  printf '\n'
+  printf '  gpt-5.5 medium · ~/Developer/coding-agents-tmux\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([createDiscoveredCodexPane()], {
+      provider: "auto",
+    });
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "codex-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Codex is idle between turns");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("Codex preview classifies existing sessions without a draft as idle", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '╭──────────────────────────────────────────────╮\n'
+  printf '│ >_ OpenAI Codex (v0.137.0)                   │\n'
+  printf '│ model:     gpt-5.5 medium   /model to change │\n'
+  printf '╰──────────────────────────────────────────────╯\n'
+  printf '\n'
+  printf '› Tell me about this project\n'
+  printf '\n'
+  printf '• This project tracks coding-agent panes in tmux.\n'
+  printf '\n'
+  printf '› Find and fix a bug in @filename\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-state-"));
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CODEX_STATE_DIR: stateDir,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([createDiscoveredCodexPane()], {
+      provider: "auto",
+    });
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "codex-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Codex is idle between turns");
   } finally {
     restoreEnv();
   }

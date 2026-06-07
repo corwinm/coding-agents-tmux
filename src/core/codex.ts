@@ -220,6 +220,13 @@ function classifyHookPayload(payload: CodexHookPayload): {
         sourceEventType: eventName,
         status: "running",
       };
+    case "PermissionRequest":
+      return {
+        activity: "busy",
+        detail: `Codex is waiting for permission to run ${payload.tool_name ?? "a tool"}`,
+        sourceEventType: eventName,
+        status: "waiting-input",
+      };
     case "PostToolUse":
       return {
         activity: "busy",
@@ -316,6 +323,7 @@ function buildManagedCodexHooks(command: string): CodexHooksDocument {
       SessionStart: [{ matcher: "startup|resume", hooks: [hook] }],
       UserPromptSubmit: [{ hooks: [hook] }],
       PreToolUse: [{ matcher: "Bash", hooks: [hook] }],
+      PermissionRequest: [{ hooks: [hook] }],
       PostToolUse: [{ matcher: "Bash", hooks: [hook] }],
       Stop: [{ hooks: [hook] }],
     },
