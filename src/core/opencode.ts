@@ -1119,6 +1119,50 @@ function getExactCodexState(index: CodexStateIndex, pane: TmuxPane): CodexStateF
   return null;
 }
 
+function getCodexPromptText(line: string): string | null {
+  const match = line.match(/^[›>]\s+(?!\d+\.)(.+)$/);
+  return match?.[1]?.trim() || null;
+}
+
+function isCodexPreviewChromeLine(line: string): boolean {
+  return (
+    /^╭[─]+╮$/.test(line) ||
+    /^╰[─]+╯$/.test(line) ||
+    /^│.*│$/.test(line) ||
+    line.startsWith("Tip:") ||
+    /^gpt-[^·]+·/.test(line) ||
+    /^[-\w.]+\s+·\s+/.test(line) ||
+    /^─+$/.test(line)
+  );
+}
+
+function isCodexPermissionPromptLine(line: string): boolean {
+  return (
+    line.includes("Hooks need review") ||
+    /Approval Required/.test(line) ||
+    /codex wants to (run|modify|use|access)/i.test(line) ||
+    /Press enter to confirm or esc to (cancel|go back)/i.test(line) ||
+    /^Yes, (proceed|just this once|and )/.test(line) ||
+    /^\[[a-z]\]\s+/.test(line)
+  );
+}
+
+function hasCodexTranscriptBetween(lines: string[], startIndex: number, endIndex: number): boolean {
+  return lines.slice(Math.max(0, startIndex), Math.max(0, endIndex)).some((line) => {
+    if (isCodexPreviewChromeLine(line)) {
+      return false;
+    }
+
+    return (
+      getCodexPromptText(line) !== null ||
+      line.startsWith("• ") ||
+      line.startsWith("└") ||
+      line.startsWith("… +") ||
+      line.startsWith("↳")
+    );
+  });
+}
+
 function classifyCodexPreview(
   lines: string[],
 ): Pick<RuntimeInfo, "activity" | "detail" | "status"> | null {
@@ -1128,14 +1172,7 @@ function classifyCodexPreview(
     .filter(({ line }) => /^\d+\.\s+\S/.test(line) || /^›\s+\d+\./.test(line))
     .map(({ index }) => index);
   const latestPromptIndex = nonEmptyLines.reduce((latest, line, index) => {
-    if (
-      (line.startsWith("› ") && !/^›\s+\d+\./.test(line)) ||
-      (line.startsWith("> ") && !/^>\s+\d+\./.test(line))
-    ) {
-      return index;
-    }
-
-    return latest;
+    return getCodexPromptText(line) !== null ? index : latest;
   }, -1);
   const latestQuestionIndex = nonEmptyLines.reduce((latest, line, index) => {
     if (
@@ -1160,8 +1197,14 @@ function classifyCodexPreview(
 
     return latest;
   }, -1);
+  const latestPermissionPromptIndex = nonEmptyLines.reduce((latest, line, index) => {
+    return isCodexPermissionPromptLine(line) ? index : latest;
+  }, -1);
   const latestModelIndex = nonEmptyLines.reduce((latest, line, index) => {
-    return line.startsWith("model:") ? index : latest;
+    return line.startsWith("model:") || line.includes("│ model:") ? index : latest;
+  }, -1);
+  const latestHeaderIndex = nonEmptyLines.reduce((latest, line, index) => {
+    return line.includes("OpenAI Codex") ? index : latest;
   }, -1);
 
   if (latestQuestionIndex >= 0 && latestQuestionIndex > latestPromptIndex) {
@@ -1175,7 +1218,33 @@ function classifyCodexPreview(
     };
   }
 
+  if (
+    latestPermissionPromptIndex >= 0 &&
+    latestPermissionPromptIndex > latestPromptIndex &&
+    latestPermissionPromptIndex > latestHeaderIndex
+  ) {
+    return {
+      activity: "busy",
+      detail: "Codex is waiting for permission input",
+      status: "waiting-input",
+    };
+  }
+
   if (latestPromptIndex >= 0 && latestPromptIndex > latestTrustIndex) {
+    const hasTranscript = hasCodexTranscriptBetween(
+      nonEmptyLines,
+      latestHeaderIndex >= 0 ? latestHeaderIndex + 1 : 0,
+      latestPromptIndex,
+    );
+
+    if (hasTranscript) {
+      return {
+        activity: "idle",
+        detail: "Codex is idle between turns",
+        status: "idle",
+      };
+    }
+
     return {
       activity: "idle",
       detail: "Codex is ready for a new prompt",
@@ -1254,6 +1323,7 @@ function shouldPreferCodexPreview(
 
 function createCodexPreviewRuntime(
   preview: Pick<RuntimeInfo, "activity" | "detail" | "status">,
+  session: SessionMatch | null = null,
 ): RuntimeInfo {
   return createRuntimeInfo({
     activity: preview.activity,
@@ -1262,7 +1332,7 @@ function createCodexPreviewRuntime(
     strategy: "exact",
     provider: "codex",
     heuristic: true,
-    session: null,
+    session,
     detail: preview.detail,
   });
 }
@@ -1321,7 +1391,10 @@ export async function buildInspectDebugInfo(pane: DiscoveredPane): Promise<Inspe
   const matchedEntry = matchedState ? (index.entryByState.get(matchedState) ?? null) : null;
   const preview = await loadCodexPreviewDebug(pane.pane.target);
   const previewRuntime = preview.classification
-    ? createCodexPreviewRuntime(preview.classification)
+    ? createCodexPreviewRuntime(
+        preview.classification,
+        matchedState ? toCodexSessionMatch(matchedState) : null,
+      )
     : null;
   const hookRuntime = matchedState?.directory
     ? createRuntimeInfo({
@@ -1370,7 +1443,7 @@ async function classifyCodexPaneRuntime(
 ): Promise<RuntimeInfo> {
   const preview = await loadCodexPreviewDebug(pane.target);
   const previewRuntime = preview.classification
-    ? createCodexPreviewRuntime(preview.classification)
+    ? createCodexPreviewRuntime(preview.classification, state ? toCodexSessionMatch(state) : null)
     : null;
 
   if (state?.directory) {
