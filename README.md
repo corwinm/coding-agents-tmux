@@ -11,13 +11,7 @@ It helps you:
 
 Today the strongest runtime support is still for `opencode`, and the project also supports `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
 
-## Demo
-
 ![coding-agents-tmux demo](docs/assets/coding-agents-tmux-demo.gif)
-
-## Rename status
-
-This project was previously named `opencode-tmux`. The current public name is `coding-agents-tmux`.
 
 ## Install
 
