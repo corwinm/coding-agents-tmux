@@ -428,7 +428,7 @@ This means any `kiro-cli` pane can be discovered and switched to without naming 
 - new panes show stale state: restart the `opencode` session so it reloads the plugin
 - waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/coding-agents-tmux.ts`
 - Pi still looks busy or unknown: confirm the bundled extension exists at `~/.pi/agent/extensions/coding-agents-tmux/index.ts` and restart the Pi session so it loads the extension
-- Codex still always looks busy: confirm `~/.codex/config.toml` has `codex_hooks = true`, `~/.codex/hooks.json` exists, and restart the Codex session
+- Codex still always looks busy: confirm `~/.codex/config.toml` has `hooks = true` under `[features]`, `~/.codex/hooks.json` exists, and restart the Codex session
 - Claude still always looks busy: confirm `~/.claude/settings.json` contains the managed `claude-hook-state` hook command and restart the Claude Code session
 - status looks stale with `sqlite` or `server`: set `@coding-agents-tmux-status-interval` to a positive value because event-driven refreshes are centered on the bundled plugin provider
 - TPM install changed but tmux still looks old: run `prefix + I` or `tmux source-file ~/.tmux.conf`

@@ -64,7 +64,11 @@ function formatConfidence(reasons: string[]): DetectionConfidence {
 }
 
 function matchesCommand(command: string, binaryName: string): boolean {
-  return command === binaryName || command.startsWith(`${binaryName}-`);
+  return (
+    command === binaryName ||
+    command === `${binaryName}.exe` ||
+    command.startsWith(`${binaryName}-`)
+  );
 }
 
 function isLikelyPiProcess(command: string): boolean {
@@ -74,6 +78,31 @@ function isLikelyPiProcess(command: string): boolean {
     matchesCommand(command, "bun") ||
     matchesCommand(command, "deno")
   );
+}
+
+function isLikelyCodexWrapperProcess(command: string): boolean {
+  return ["node", "bun", "deno", "npm", "npx", "pnpm", "yarn", "corepack"].some((name) =>
+    matchesCommand(command, name),
+  );
+}
+
+function isCodexProcessToken(token: string): boolean {
+  const normalized = token.toLowerCase().replace(/^['"]+|['",;:]+$/g, "");
+
+  if (normalized.includes("@openai/codex")) {
+    return true;
+  }
+
+  const basename = normalized.split(/[\\/]/).pop() ?? "";
+  return /^codex(?:$|\.(?:exe|[cm]?js)$|-(?:aarch64|x86_64|arm64|x64|darwin|linux|windows|win32|unknown|apple|pc|msvc|musl|gnu)[a-z0-9._-]*$)/.test(
+    basename,
+  );
+}
+
+function processArgsContainCodex(stdoutText: string): boolean {
+  return stdoutText
+    .split("\n")
+    .some((line) => line.split(/\s+/).some((token) => isCodexProcessToken(token)));
 }
 
 function pickDetectedAgent(
@@ -308,8 +337,45 @@ export function discoverAgentPanesFromList(panes: TmuxPane[]): DiscoveredPane[] 
     .sort((left, right) => left.pane.target.localeCompare(right.pane.target));
 }
 
+async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetection | null> {
+  if (!isLikelyCodexWrapperProcess(pane.currentCommand.toLowerCase())) {
+    return null;
+  }
+
+  const { stdoutText, exitCode } = await runCommand(["ps", "-t", pane.tty, "-o", "args="]);
+
+  if (exitCode !== 0 || !processArgsContainCodex(stdoutText)) {
+    return null;
+  }
+
+  return {
+    agent: "codex",
+    confidence: "medium",
+    reasons: ["process:codex"],
+  };
+}
+
 export async function discoverAgentPanes(): Promise<DiscoveredPane[]> {
-  return discoverAgentPanesFromList(await listAllPanes());
+  const panes = await listAllPanes();
+  const discovered = await Promise.all(
+    panes.map(async (pane) => {
+      const detection = detectAgentPane(pane);
+
+      if (detection.agent !== null) {
+        return { pane, detection };
+      }
+
+      const processDetection = await detectAgentPaneFromProcessArgs(pane);
+      return {
+        pane,
+        detection: processDetection ?? detection,
+      };
+    }),
+  );
+
+  return discovered
+    .filter((entry) => entry.detection.agent !== null)
+    .sort((left, right) => left.pane.target.localeCompare(right.pane.target));
 }
 
 export function findDiscoveredPaneByTarget(

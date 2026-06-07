@@ -426,7 +426,7 @@ test("CLI install-codex writes Codex config and hooks files", async () => {
     assert.equal(result.exitCode, 0);
     assert.match(result.stdoutText, /Updated .*config\.toml/);
     assert.match(result.stdoutText, /Updated .*hooks\.json/);
-    assert.match(config, /codex_hooks = true/);
+    assert.match(config, /^hooks = true$/m);
     assert.match(hooks, /codex-hook-state/);
     assert.match(hooks, /bin\/coding-agents-tmux/);
   } finally {
