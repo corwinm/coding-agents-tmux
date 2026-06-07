@@ -2,6 +2,8 @@
 
 `tmux` integration for terminal coding agent sessions.
 
+![coding-agents-tmux demo](docs/assets/coding-agents-tmux-demo.gif)
+
 It helps you:
 
 - open a chooser of active coding agent panes
@@ -9,9 +11,7 @@ It helps you:
 - show the current pane state plus a background session summary in the status line
 - use local plugin and hook state instead of relying only on sqlite or pane heuristics
 
-Today the strongest runtime support is still for `opencode`, and the project also supports `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
-
-![coding-agents-tmux demo](docs/assets/coding-agents-tmux-demo.gif)
+This project was originally designed for `opencode` but has been extended to support `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
 
 ## Install
 
