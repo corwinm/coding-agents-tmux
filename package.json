@@ -45,6 +45,12 @@
     "shellcheck": "^4.1.0",
     "typescript": "^6.0.2"
   },
+  "overrides": {
+    "shellcheck": {
+      "@felipecrs/decompress-tarxz": "5.0.6",
+      "@xhmikosr/decompress-unzip": "8.2.1"
+    }
+  },
   "lint-staged": {
     "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}": [
       "oxlint --fix --deny-warnings",
