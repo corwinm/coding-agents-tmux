@@ -42,14 +42,7 @@
     "lint-staged": "^16.4.0",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",
-    "shellcheck": "^4.1.0",
     "typescript": "^6.0.2"
-  },
-  "overrides": {
-    "shellcheck": {
-      "@felipecrs/decompress-tarxz": "5.0.6",
-      "@xhmikosr/decompress-unzip": "8.2.1"
-    }
   },
   "lint-staged": {
     "**/*.{js,mjs,cjs,jsx,ts,tsx,mts,cts}": [
