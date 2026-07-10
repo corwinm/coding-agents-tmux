@@ -431,6 +431,12 @@ This means any `kiro-cli` pane can be discovered and switched to without naming 
 
 If you edit this repo outside `~/.tmux/plugins/coding-agents-tmux`, tmux will still be using the TPM-installed copy until you sync it.
 
+Local development requires ShellCheck. On macOS, install it with Homebrew:
+
+```bash
+brew install shellcheck
+```
+
 Useful commands:
 
 ```bash
