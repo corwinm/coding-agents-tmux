@@ -29,6 +29,7 @@
     "check": "./bin/coding-agents-tmux --help",
     "typecheck": "tsc --project tsconfig.json",
     "sync-tmux": "./scripts/sync-tmux-plugin.sh",
+    "restore-tmux": "./scripts/sync-tmux-plugin.sh --restore",
     "fmt": "oxfmt .",
     "fmt:check": "oxfmt --check ."
   },
