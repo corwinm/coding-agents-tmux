@@ -443,11 +443,15 @@ Useful commands:
 npm run sync-tmux
 npm run sync-tmux -- --reload
 npm run sync-tmux -- --bootstrap --reload
+npm run restore-tmux
 ```
 
 - `sync-tmux` copies this checkout into `~/.tmux/plugins/coding-agents-tmux`
 - `--reload` runs `tmux source-file ~/.tmux.conf` after syncing
 - `--bootstrap` reinstalls production dependencies in the synced plugin copy when `package.json` changed
+- `restore-tmux` removes the synced development files, preserves `node_modules`, and returns the TPM checkout to a clean state so `prefix + U` can update it normally
+
+Run `npm run restore-tmux` when you finish local development or before asking TPM to update all plugins.
 
 ## CLI
 

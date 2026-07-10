@@ -7,9 +7,10 @@ TARGET_DIR="${CODING_AGENTS_TMUX_PLUGIN_DIR:-$HOME/.tmux/plugins/coding-agents-t
 TMUX_CONF="${CODING_AGENTS_TMUX_TMUX_CONF:-$HOME/.tmux.conf}"
 RELOAD=0
 BOOTSTRAP=0
+RESTORE=0
 
 usage() {
-  printf 'Usage: %s [--target <dir>] [--reload] [--bootstrap]\n' "${0##*/}"
+  printf 'Usage: %s [--target <dir>] [--reload] [--bootstrap] [--restore]\n' "${0##*/}"
   printf '\n'
   printf 'Sync this checkout into the tmux plugin install used by TPM.\n'
   printf '\n'
@@ -17,6 +18,7 @@ usage() {
   printf '  --target <dir>   Override target plugin directory\n'
   printf '  --reload         Reload tmux after syncing\n'
   printf '  --bootstrap      Reinstall production npm deps in the target dir\n'
+  printf '  --restore        Discard synced files and restore the TPM checkout\n'
   printf '  -h, --help       Show this help\n'
 }
 
@@ -76,6 +78,9 @@ while [ "$#" -gt 0 ]; do
   --bootstrap)
     BOOTSTRAP=1
     ;;
+  --restore)
+    RESTORE=1
+    ;;
   -h | --help)
     usage
     exit 0
@@ -88,6 +93,22 @@ while [ "$#" -gt 0 ]; do
   esac
   shift
 done
+
+if [ "$RESTORE" -eq 1 ]; then
+  if [ ! -d "$TARGET_DIR/.git" ]; then
+    printf 'coding-agents-tmux: cannot restore non-git target: %s\n' "$TARGET_DIR" >&2
+    exit 1
+  fi
+
+  git -C "$TARGET_DIR" reset --hard HEAD
+  git -C "$TARGET_DIR" clean -fd -e node_modules/
+  printf 'Restored clean TPM checkout at %s\n' "$TARGET_DIR"
+
+  if [ "$RELOAD" -eq 1 ]; then
+    reload_tmux
+  fi
+  exit 0
+fi
 
 if ! command -v rsync >/dev/null 2>&1; then
   printf 'coding-agents-tmux: rsync is required to sync the plugin checkout\n' >&2
