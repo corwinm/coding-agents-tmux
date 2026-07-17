@@ -105,6 +105,12 @@ function processArgsContainCodex(stdoutText: string): boolean {
     .some((line) => line.split(/\s+/).some((token) => isCodexProcessToken(token)));
 }
 
+// Recent Claude Code releases rename their process so tmux reports the version
+// string (e.g. "2.1.206") as pane_current_command instead of "claude".
+function isClaudeVersionCommand(command: string): boolean {
+  return /^\d+\.\d+\.\d+/.test(command);
+}
+
 function pickDetectedAgent(
   candidates: Array<{
     agent: AgentKind;
@@ -165,6 +171,12 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
     lowerTitle === "pi" || lowerTitle.startsWith("pi - ") || title.startsWith("π - ");
   const hasClaudeTitleHint =
     normalizedLowerTitle === "claude" || normalizedLowerTitle.startsWith("claude code");
+  // Recent Claude Code releases set the pane title to the current task summary
+  // prefixed with a status glyph (e.g. "✳ Set up deployment", braille spinner
+  // frames). Detect the presence of that leading glyph so we can corroborate a
+  // version-string command without matching arbitrary semver-named processes.
+  const hasLeadingGlyphTitle =
+    title.length > 0 && normalizedLowerTitle.length > 0 && normalizedLowerTitle !== lowerTitle;
   const hasKiroTitleHint =
     normalizedLowerTitle === "kiro" || normalizedLowerTitle.startsWith("kiro cli");
 
@@ -184,6 +196,8 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
 
   if (matchesCommand(command, "claude")) {
     claudeReasons.push("command:claude");
+  } else if (isClaudeVersionCommand(command) && hasLeadingGlyphTitle) {
+    claudeReasons.push("command:claude-version");
   }
 
   if (hasKiroTitleHint) {
