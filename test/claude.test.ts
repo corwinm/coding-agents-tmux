@@ -222,6 +222,38 @@ test("persistClaudeHookState classifies AskUserQuestion and SessionEnd removes s
   }
 });
 
+test("persistClaudeHookState treats Stop as idle even when the last message reads like a question", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-claude-state-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: stateDir,
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    for (const message of [
+      "Would you like me to run the tests?",
+      "Let me know if you want anything else.",
+      "I finished the change. Should I proceed with the next step?",
+    ]) {
+      await persistClaudeHookState(
+        JSON.stringify({
+          hook_event_name: "Stop",
+          cwd: "/tmp/claude-project",
+          session_id: "claude-session",
+          last_assistant_message: message,
+        }),
+      );
+
+      const states = readClaudeStates();
+      assert.equal(states[0]?.status, "idle");
+      assert.equal(states[0]?.activity, "idle");
+      assert.equal(states[0]?.detail, "Claude Code is idle between turns");
+    }
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("Claude runtime matches panes by target, pane id, and unique cwd fallback", async () => {
   const stateDir = createClaudeStateDir([
     {

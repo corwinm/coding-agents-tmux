@@ -127,57 +127,6 @@ function countChoiceLines(message: string): number {
     .length;
 }
 
-function classifyWaitingMessage(message: string | null | undefined): RuntimeStatus | null {
-  if (!message) {
-    return null;
-  }
-
-  const trimmed = message.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
-  const lower = trimmed.toLowerCase();
-
-  if (countChoiceLines(trimmed) >= 2) {
-    return "waiting-question";
-  }
-
-  if (
-    ["permission", "allow", "deny"].every((fragment) => lower.includes(fragment)) ||
-    ["which option", "choose an option", "select an option"].some((fragment) =>
-      lower.includes(fragment),
-    )
-  ) {
-    return "waiting-question";
-  }
-
-  if (/\?\s*$/.test(trimmed)) {
-    return "waiting-input";
-  }
-
-  if (
-    [
-      "would you like",
-      "do you want",
-      "should i",
-      "can you",
-      "could you",
-      "please provide",
-      "please confirm",
-      "choose",
-      "select",
-      "confirm",
-      "what would you like",
-    ].some((fragment) => lower.includes(fragment))
-  ) {
-    return "waiting-input";
-  }
-
-  return null;
-}
-
 function getClaudeHome(): string {
   return process.env.CLAUDE_HOME ?? join(homedir(), ".claude");
 }
@@ -394,26 +343,18 @@ function classifyHookPayload(payload: ClaudeHookPayload): {
         sourceEventType: eventName,
         status: "running",
       };
-    case "Stop": {
-      const waitingStatus = classifyWaitingMessage(payload.last_assistant_message);
-
-      return waitingStatus
-        ? {
-            activity: "busy",
-            detail:
-              waitingStatus === "waiting-question"
-                ? "Claude Code is waiting for a multiple-choice response"
-                : "Claude Code is waiting for user input",
-            sourceEventType: eventName,
-            status: waitingStatus,
-          }
-        : {
-            activity: "idle",
-            detail: "Claude Code is idle between turns",
-            sourceEventType: eventName,
-            status: "idle",
-          };
-    }
+    case "Stop":
+      // A Stop event means Claude finished its turn and handed control back to
+      // the user. That is an idle state. Genuine blocking prompts arrive via
+      // dedicated hooks (PreToolUse+AskUserQuestion, PermissionRequest,
+      // Elicitation); a prose question at the end of a turn is not a blocking
+      // wait, so we must not classify it as "waiting" here.
+      return {
+        activity: "idle",
+        detail: "Claude Code is idle between turns",
+        sourceEventType: eventName,
+        status: "idle",
+      };
     default:
       return {
         activity: "unknown",
@@ -634,8 +575,12 @@ function classifyClaudePreview(
   const recentLines = nonEmptyLines.slice(-8);
   const recentText = recentLines.join("\n");
   const recentLower = recentText.toLowerCase();
-  const lastLine = recentLines.at(-1) ?? "";
 
+  // Only treat the preview as "waiting" when there is a strong, structured
+  // signal on screen: an actual multiple-choice list or a permission prompt.
+  // A trailing "?" or conversational phrasing is not reliable evidence that
+  // Claude is blocked on input — it is usually just an idle end-of-turn
+  // message — so we intentionally do not infer "waiting" from prose.
   if (
     countChoiceLines(recentText) >= 2 ||
     ["permission", "allow", "deny"].every((fragment) => recentLower.includes(fragment))
@@ -644,19 +589,6 @@ function classifyClaudePreview(
       activity: "busy",
       detail: "Claude Code appears to be waiting for a multiple-choice response",
       status: "waiting-question",
-    };
-  }
-
-  if (
-    /\?\s*$/.test(lastLine) ||
-    ["would you like", "do you want", "should i", "please confirm", "what would you like"].some(
-      (fragment) => recentLower.includes(fragment),
-    )
-  ) {
-    return {
-      activity: "busy",
-      detail: "Claude Code appears to be waiting for user input",
-      status: "waiting-input",
     };
   }
 
