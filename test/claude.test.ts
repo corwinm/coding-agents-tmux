@@ -318,6 +318,121 @@ test("Claude runtime matches panes by target, pane id, and unique cwd fallback",
   }
 });
 
+test("live preview overrides a stale running hook state so idle panes read idle", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '  \xe2\x8e\xbf  Done reviewing the changes.\n'
+  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n'
+  printf '\xe2\x9d\xaf \n'
+  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n'
+  printf '  auto mode on (shift+tab to cycle) \xc2\xb7 \xe2\x86\x90 for agents\n'
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const stateDir = createClaudeStateDir([
+    {
+      version: 1,
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/claude-project",
+      title: "Stale Session",
+      status: "running",
+      activity: "busy",
+      sourceEventType: "PostToolBatch",
+      updatedAt: Date.now() - 5 * 60_000,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: stateDir,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+    // Session metadata is still enriched from the matched hook state.
+    assert.equal(summaries[0]?.runtime.session?.title, "Stale Session");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("live preview treats an open slash-command dialog as waiting", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '   Effort\n'
+  printf '   low     medium     high     xhigh      max\n'
+  printf '   \xe2\x86\x90/\xe2\x86\x92 to adjust \xc2\xb7 Enter to confirm \xc2\xb7 Esc to cancel\n'
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "waiting-question");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("live preview reports running when Claude shows the interrupt footer", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '  auto mode on (shift+tab to cycle) \xc2\xb7 esc to interrupt \xc2\xb7 \xe2\x86\x90 for agents\n'
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "running");
+    assert.equal(summaries[0]?.runtime.activity, "busy");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("Claude runtime falls back to preview and command classification", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "capture-pane" ]; then
