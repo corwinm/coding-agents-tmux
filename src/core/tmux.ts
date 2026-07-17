@@ -111,6 +111,16 @@ function isClaudeVersionCommand(command: string): boolean {
   return /^\d+\.\d+\.\d+/.test(command);
 }
 
+// Claude Code prefixes its pane title with a rotating status glyph: a
+// sparkle/asterisk dingbat (e.g. "✳", "✶", "✻", "✽"), a braille spinner
+// frame (U+2800–U+28FF), or a middle dot when idle. Match only these glyphs so
+// arbitrary decorative title prefixes (e.g. "[prod]", "# build") don't count.
+const CLAUDE_STATUS_GLYPH_PATTERN = /^[\u2720-\u274F\u2800-\u28FF\u00B7]/;
+
+function hasClaudeStatusGlyphPrefix(title: string): boolean {
+  return CLAUDE_STATUS_GLYPH_PATTERN.test(title.trimStart());
+}
+
 function pickDetectedAgent(
   candidates: Array<{
     agent: AgentKind;
@@ -172,11 +182,10 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
   const hasClaudeTitleHint =
     normalizedLowerTitle === "claude" || normalizedLowerTitle.startsWith("claude code");
   // Recent Claude Code releases set the pane title to the current task summary
-  // prefixed with a status glyph (e.g. "✳ Set up deployment", braille spinner
-  // frames). Detect the presence of that leading glyph so we can corroborate a
+  // prefixed with a Claude status glyph (e.g. "✳ Set up deployment", braille
+  // spinner frames). Detect that specific glyph so we can corroborate a
   // version-string command without matching arbitrary semver-named processes.
-  const hasLeadingGlyphTitle =
-    title.length > 0 && normalizedLowerTitle.length > 0 && normalizedLowerTitle !== lowerTitle;
+  const hasClaudeGlyphTitle = hasClaudeStatusGlyphPrefix(title);
   const hasKiroTitleHint =
     normalizedLowerTitle === "kiro" || normalizedLowerTitle.startsWith("kiro cli");
 
@@ -196,7 +205,7 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
 
   if (matchesCommand(command, "claude")) {
     claudeReasons.push("command:claude");
-  } else if (isClaudeVersionCommand(command) && hasLeadingGlyphTitle) {
+  } else if (isClaudeVersionCommand(command) && hasClaudeGlyphTitle) {
     claudeReasons.push("command:claude-version");
   }
 

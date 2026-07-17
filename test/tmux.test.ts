@@ -185,6 +185,26 @@ test("detectAgentPane recognizes OpenCode, Codex, Pi, Claude, Kiro, and no-signa
     },
   );
 
+  // A decorative (non-Claude) title prefix such as "[prod]" or "# build" must
+  // not be treated as a Claude status glyph even with a version-string command.
+  assert.deepEqual(
+    detectAgentPane(createPane({ paneTitle: "[prod] api", currentCommand: "2.1.206" })),
+    {
+      agent: null,
+      confidence: "low",
+      reasons: [],
+    },
+  );
+
+  assert.deepEqual(
+    detectAgentPane(createPane({ paneTitle: "# build", currentCommand: "2.1.206" })),
+    {
+      agent: null,
+      confidence: "low",
+      reasons: [],
+    },
+  );
+
   assert.deepEqual(
     detectAgentPane(createPane({ paneTitle: "Kiro CLI", currentCommand: "kiro-cli-chat" })),
     {
