@@ -145,7 +145,63 @@ test("detectAgentPane recognizes OpenCode, Codex, Pi, Claude, Kiro, and no-signa
     {
       agent: "claude",
       confidence: "high",
-      reasons: ["title:Claude"],
+      reasons: ["title:Claude", "command:claude-version"],
+    },
+  );
+
+  // Recent Claude Code releases report the version string as the pane command
+  // and set the title to the current task summary (no "Claude" text), prefixed
+  // with a status glyph. Detect via the version command + leading glyph.
+  assert.deepEqual(
+    detectAgentPane(
+      createPane({ paneTitle: "✳ Set up AWS deployment", currentCommand: "2.1.206" }),
+    ),
+    {
+      agent: "claude",
+      confidence: "medium",
+      reasons: ["command:claude-version"],
+    },
+  );
+
+  assert.deepEqual(
+    detectAgentPane(
+      createPane({ paneTitle: "⠂ Resolve deprecated npm warnings", currentCommand: "2.1.211" }),
+    ),
+    {
+      agent: "claude",
+      confidence: "medium",
+      reasons: ["command:claude-version"],
+    },
+  );
+
+  // A bare version-string command with a plain (non-glyph) title must not be
+  // misclassified as Claude.
+  assert.deepEqual(
+    detectAgentPane(createPane({ paneTitle: "node repl", currentCommand: "2.1.206" })),
+    {
+      agent: null,
+      confidence: "low",
+      reasons: [],
+    },
+  );
+
+  // A decorative (non-Claude) title prefix such as "[prod]" or "# build" must
+  // not be treated as a Claude status glyph even with a version-string command.
+  assert.deepEqual(
+    detectAgentPane(createPane({ paneTitle: "[prod] api", currentCommand: "2.1.206" })),
+    {
+      agent: null,
+      confidence: "low",
+      reasons: [],
+    },
+  );
+
+  assert.deepEqual(
+    detectAgentPane(createPane({ paneTitle: "# build", currentCommand: "2.1.206" })),
+    {
+      agent: null,
+      confidence: "low",
+      reasons: [],
     },
   );
 
