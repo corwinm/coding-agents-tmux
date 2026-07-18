@@ -127,57 +127,6 @@ function countChoiceLines(message: string): number {
     .length;
 }
 
-function classifyWaitingMessage(message: string | null | undefined): RuntimeStatus | null {
-  if (!message) {
-    return null;
-  }
-
-  const trimmed = message.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
-  const lower = trimmed.toLowerCase();
-
-  if (countChoiceLines(trimmed) >= 2) {
-    return "waiting-question";
-  }
-
-  if (
-    ["permission", "allow", "deny"].every((fragment) => lower.includes(fragment)) ||
-    ["which option", "choose an option", "select an option"].some((fragment) =>
-      lower.includes(fragment),
-    )
-  ) {
-    return "waiting-question";
-  }
-
-  if (/\?\s*$/.test(trimmed)) {
-    return "waiting-input";
-  }
-
-  if (
-    [
-      "would you like",
-      "do you want",
-      "should i",
-      "can you",
-      "could you",
-      "please provide",
-      "please confirm",
-      "choose",
-      "select",
-      "confirm",
-      "what would you like",
-    ].some((fragment) => lower.includes(fragment))
-  ) {
-    return "waiting-input";
-  }
-
-  return null;
-}
-
 function getClaudeHome(): string {
   return process.env.CLAUDE_HOME ?? join(homedir(), ".claude");
 }
@@ -394,26 +343,18 @@ function classifyHookPayload(payload: ClaudeHookPayload): {
         sourceEventType: eventName,
         status: "running",
       };
-    case "Stop": {
-      const waitingStatus = classifyWaitingMessage(payload.last_assistant_message);
-
-      return waitingStatus
-        ? {
-            activity: "busy",
-            detail:
-              waitingStatus === "waiting-question"
-                ? "Claude Code is waiting for a multiple-choice response"
-                : "Claude Code is waiting for user input",
-            sourceEventType: eventName,
-            status: waitingStatus,
-          }
-        : {
-            activity: "idle",
-            detail: "Claude Code is idle between turns",
-            sourceEventType: eventName,
-            status: "idle",
-          };
-    }
+    case "Stop":
+      // A Stop event means Claude finished its turn and handed control back to
+      // the user. That is an idle state. Genuine blocking prompts arrive via
+      // dedicated hooks (PreToolUse+AskUserQuestion, PermissionRequest,
+      // Elicitation); a prose question at the end of a turn is not a blocking
+      // wait, so we must not classify it as "waiting" here.
+      return {
+        activity: "idle",
+        detail: "Claude Code is idle between turns",
+        sourceEventType: eventName,
+        status: "idle",
+      };
     default:
       return {
         activity: "unknown",
@@ -627,62 +568,95 @@ function getDirectoryFallbackClaudeState(
   return states[0] ?? null;
 }
 
+// Claude's interactive prompts (permission requests, AskUserQuestion) render a
+// selectable list where the highlighted option is marked with an arrow glyph.
+// Requiring the arrow avoids misreading ordinary numbered prose in an assistant
+// message as a live prompt.
+function hasInteractiveChoicePrompt(lines: string[]): boolean {
+  const trimmed = lines.map((line) => line.trim());
+  const hasSelectionArrow = trimmed.some(
+    (line) => /^[❯›>]\s*\d+\.\s+\S/.test(line) || /^[❯›>]\s+\S/.test(line),
+  );
+
+  return hasSelectionArrow && countChoiceLines(lines.join("\n")) >= 2;
+}
+
+// The tmux pane is the authoritative real-time signal for whether Claude is
+// actively working. While Claude is processing it renders "esc to interrupt" in
+// the footer and a spinner status line (e.g. "✳ Forming… (1m 2s · ↓ 4.2k
+// tokens)"); once the turn ends both disappear. Hook state, by contrast, can go
+// stale because Claude does not always emit a Stop event after a tool batch.
+function detectClaudeBusy(text: string, lower: string): boolean {
+  return lower.includes("esc to interrupt") || /…\s*\(\s*\d+\s*[hms]/.test(text);
+}
+
+// Claude's slash-command menus (/effort, /model, /config, …) open an
+// interactive overlay whose footer offers confirm/cancel and navigation hints.
+// These block on user interaction, so they count as "waiting" rather than idle.
+function isInteractiveDialog(lower: string): boolean {
+  return (
+    lower.includes("enter to confirm") ||
+    lower.includes("esc to cancel") ||
+    (lower.includes("to select") && lower.includes("enter")) ||
+    (lower.includes("to adjust") && lower.includes("confirm"))
+  );
+}
+
 function classifyClaudePreview(
   lines: string[],
 ): Pick<RuntimeInfo, "activity" | "detail" | "status"> | null {
   const nonEmptyLines = lines.map((line) => line.trim()).filter(Boolean);
-  const recentLines = nonEmptyLines.slice(-8);
+
+  if (nonEmptyLines.length === 0) {
+    return null;
+  }
+
+  const text = nonEmptyLines.join("\n");
+  const lower = text.toLowerCase();
+  const recentLines = nonEmptyLines.slice(-12);
   const recentText = recentLines.join("\n");
   const recentLower = recentText.toLowerCase();
-  const lastLine = recentLines.at(-1) ?? "";
 
+  // Waiting is checked first: a blocking prompt or interactive dialog can also
+  // keep "esc to interrupt" on screen, but it is a genuine wait for user input.
   if (
-    countChoiceLines(recentText) >= 2 ||
-    ["permission", "allow", "deny"].every((fragment) => recentLower.includes(fragment))
+    hasInteractiveChoicePrompt(recentLines) ||
+    ["permission", "allow", "deny"].every((fragment) => recentLower.includes(fragment)) ||
+    isInteractiveDialog(recentLower)
   ) {
     return {
       activity: "busy",
-      detail: "Claude Code appears to be waiting for a multiple-choice response",
+      detail: "Claude Code appears to be waiting for a response",
       status: "waiting-question",
     };
   }
 
-  if (
-    /\?\s*$/.test(lastLine) ||
-    ["would you like", "do you want", "should i", "please confirm", "what would you like"].some(
-      (fragment) => recentLower.includes(fragment),
-    )
-  ) {
+  if (detectClaudeBusy(text, lower)) {
     return {
       activity: "busy",
-      detail: "Claude Code appears to be waiting for user input",
-      status: "waiting-input",
+      detail: "Claude Code is working",
+      status: "running",
     };
   }
 
-  return null;
+  // A live Claude session with no active spinner and no blocking prompt is idle
+  // between turns, regardless of what a possibly-stale hook event recorded. The
+  // absence of "esc to interrupt" is strong evidence Claude is not working, so a
+  // readable-but-otherwise-unrecognized Claude screen is treated as idle rather
+  // than defaulting to "running".
+  return {
+    activity: "idle",
+    detail: "Claude Code is idle between turns",
+    status: "idle",
+  };
 }
 
-function createClaudePreviewRuntime(
-  preview: Pick<RuntimeInfo, "activity" | "detail" | "status">,
-): RuntimeInfo {
-  return createClaudeRuntimeInfo({
-    activity: preview.activity,
-    status: preview.status,
-    source: "claude-preview",
-    strategy: "exact",
-    provider: "claude",
-    heuristic: true,
-    session: null,
-    detail: preview.detail,
-  });
-}
-
-async function loadClaudePreviewRuntime(target: TmuxPane["target"]): Promise<RuntimeInfo | null> {
+async function loadClaudePreviewClassification(
+  target: TmuxPane["target"],
+): Promise<Pick<RuntimeInfo, "activity" | "detail" | "status"> | null> {
   try {
     const lines = await capturePanePreview(target, 24);
-    const preview = classifyClaudePreview(lines);
-    return preview ? createClaudePreviewRuntime(preview) : null;
+    return classifyClaudePreview(lines);
   } catch {
     return null;
   }
@@ -756,44 +730,77 @@ export function buildClaudeHooksTemplate(command: string): string {
   return `${JSON.stringify(buildManagedClaudeHooks(command), null, 2)}\n`;
 }
 
+// A hook state is only trusted to assert a blocking wait that the live preview
+// cannot see (e.g. an MCP elicitation form) for a short window. Beyond this the
+// pane preview is the sole source of truth, which prevents stale "waiting" or
+// "running" events from lingering after Claude has gone idle.
+const CLAUDE_HOOK_WAIT_FRESHNESS_MS = 60_000;
+
+function isFreshClaudeWait(state: ClaudeStateFile | null): state is ClaudeStateFile {
+  if (!state?.status?.startsWith("waiting")) {
+    return false;
+  }
+
+  return Date.now() - (state.updatedAt ?? 0) < CLAUDE_HOOK_WAIT_FRESHNESS_MS;
+}
+
 export async function attachRuntimeWithClaude(
   panes: DiscoveredPane[],
   index = buildClaudeStateIndex(),
 ): Promise<PaneRuntimeSummary[]> {
   return Promise.all(
     panes.map(async (entry) => {
-      const exactState = getExactClaudeState(index, entry.pane);
+      const hookState =
+        getExactClaudeState(index, entry.pane) ??
+        getDirectoryFallbackClaudeState(index, entry.pane);
+      const session = hookState ? toClaudeSessionMatch(hookState) : null;
+      const preview = await loadClaudePreviewClassification(entry.pane.target);
 
-      if (exactState) {
+      if (preview) {
+        // The preview reliably tells busy/idle/waiting apart in real time. When
+        // it reads idle but a fresh hook event says Claude is blocked on a
+        // structured prompt the preview can't render, honor the hook.
+        if (preview.status === "idle" && isFreshClaudeWait(hookState)) {
+          return {
+            ...entry,
+            runtime: classifyClaudeState(hookState, {
+              detail: "matched fresh Claude hook wait state",
+              heuristic: false,
+              strategy: "exact",
+            }),
+          };
+        }
+
+        const detail =
+          preview.status === "waiting-question" && hookState?.detail?.includes("waiting")
+            ? hookState.detail
+            : preview.detail;
+
         return {
           ...entry,
-          runtime: classifyClaudeState(exactState, {
-            detail: "matched Claude hook state by target or pane id",
-            heuristic: false,
-            strategy: "exact",
+          runtime: createClaudeRuntimeInfo({
+            activity: preview.activity,
+            status: preview.status,
+            source: "claude-preview",
+            strategy: hookState ? "exact" : "unmapped",
+            provider: "claude",
+            heuristic: true,
+            session,
+            detail,
           }),
         };
       }
 
-      const directoryState = getDirectoryFallbackClaudeState(index, entry.pane);
-
-      if (directoryState) {
+      // Preview unreadable (capture failed): fall back to hook state, then to
+      // process detection.
+      if (hookState) {
         return {
           ...entry,
-          runtime: classifyClaudeState(directoryState, {
-            detail: "matched unique Claude hook state by pane cwd",
+          runtime: classifyClaudeState(hookState, {
+            detail: "matched Claude hook state (preview unavailable)",
             heuristic: true,
             strategy: "exact",
           }),
-        };
-      }
-
-      const previewRuntime = await loadClaudePreviewRuntime(entry.pane.target);
-
-      if (previewRuntime) {
-        return {
-          ...entry,
-          runtime: previewRuntime,
         };
       }
 
