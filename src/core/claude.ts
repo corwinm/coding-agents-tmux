@@ -602,25 +602,61 @@ function detectClaudeBusy(text: string, lower: string): boolean {
 // glyph followed by "Waiting for N background agents to finish".
 const CLAUDE_SPINNER_GLYPH = /^[\u00b7\u2217\u2722-\u273f]\s+/u;
 
-// The match requires a leading spinner glyph and then anchors on the phrase, so
-// it only fires on the live status row. A quoted, bulleted, or prompt-prefixed
-// mention of the same words in transcript prose (e.g. Claude explaining the old
-// spinner) is not stripped to "Waiting..." and stays idle.
-//
-// This scans the whole captured buffer rather than just the tail: the status
-// line renders above the prompt while one row per agent stacks below the
-// footer, so a large agent list (8+) would otherwise push the marker out of a
-// last-N-lines window. The strict glyph prefix keeps the wider scan safe from
-// prose matches.
-function detectClaudeBackgroundAgents(lines: string[]): boolean {
-  return lines.some((line) => {
-    const status = line.trim();
-    if (!CLAUDE_SPINNER_GLYPH.test(status)) {
-      return false;
-    }
+// Claude draws its input as a box: an optional live status line, a horizontal
+// rule, the ❯ prompt, another rule, then the footer (and any background-agent
+// rows). The rules are runs of the ─ box-drawing char.
+const CLAUDE_INPUT_PROMPT = /^\u276f(?:\s|$)/;
+const CLAUDE_BORDER_RULE = /\u2500{3,}/;
 
-    return /^waiting for \d+ background agents?\b/i.test(status.replace(CLAUDE_SPINNER_GLYPH, ""));
-  });
+// Extract the single "live status" line that Claude renders directly above the
+// input box's top rule. That slot is authoritative for the current turn: idle
+// panes show e.g. "✻ Churned for 1m", a working pane shows "✻ Waiting for N
+// background agents to finish". Copied/quoted status rows elsewhere in the
+// scrollback sit above this slot and are deliberately ignored.
+function getClaudeLiveStatusLine(lines: string[]): string | null {
+  let promptIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (CLAUDE_INPUT_PROMPT.test(lines[i]?.trim() ?? "")) {
+      promptIndex = i;
+      break;
+    }
+  }
+
+  if (promptIndex <= 0) {
+    return null;
+  }
+
+  // The top rule sits just above the prompt (allow a couple of lines of slack
+  // for wrapped input).
+  let borderIndex = -1;
+  for (let i = promptIndex - 1; i >= 0 && i >= promptIndex - 3; i -= 1) {
+    if (CLAUDE_BORDER_RULE.test(lines[i] ?? "")) {
+      borderIndex = i;
+      break;
+    }
+  }
+
+  if (borderIndex <= 0) {
+    return null;
+  }
+
+  const status = lines[borderIndex - 1]?.trim() ?? "";
+  return status || null;
+}
+
+// A background-agent wait is reported only when the live status slot itself
+// reads "<spinner glyph> Waiting for N background agents". Anchoring to that one
+// line (rather than scanning the whole buffer) keeps large agent lists working
+// — the status line stays above the prompt no matter how many rows stack below
+// the footer — while ignoring quoted, bulleted, or copied mentions in prose.
+function detectClaudeBackgroundAgents(lines: string[]): boolean {
+  const status = getClaudeLiveStatusLine(lines);
+
+  if (!status || !CLAUDE_SPINNER_GLYPH.test(status)) {
+    return false;
+  }
+
+  return /^waiting for \d+ background agents?\b/i.test(status.replace(CLAUDE_SPINNER_GLYPH, ""));
 }
 
 // Claude's slash-command menus (/effort, /model, /config, …) open an

@@ -535,6 +535,48 @@ exit 1
   }
 });
 
+test("live preview stays idle when a copied spinner status row sits in the scrollback", async () => {
+  // Claude explains the previous UI by echoing an exact status row into the
+  // transcript. The genuine live status slot (directly above the prompt rule)
+  // reads an idle "Churned for" summary, so the copied row must be ignored.
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '%s\\n' '  Earlier, while the Task agents ran, the pane showed:'
+  printf '%s\\n' '✳ Waiting for 2 background agents to finish'
+  printf '%s\\n' '  Now they have all finished and I have merged the results.'
+  printf '%s\\n' '✻ Churned for 45s'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents'
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("live preview stays idle when background-agents text only appears in prose", async () => {
   // The background-agents phrase appears only inside transcript prose — as a
   // mid-line quote, a line-leading quote, and a bulleted mention — but never as
