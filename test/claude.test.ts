@@ -486,6 +486,55 @@ exit 1
   }
 });
 
+test("live preview reports busy with a large background-agent list past the tail window", async () => {
+  // With many agents the status line renders well above the prompt while one
+  // row per agent stacks below the footer, pushing "Waiting for N background
+  // agents" outside the last dozen lines. The detector must scan the whole
+  // captured buffer to still see it.
+  const agentRows = Array.from(
+    { length: 10 },
+    (_unused, i) =>
+      `  printf '%s\\n' '  ◯ general-purpose  Build concept ${i + 1}   ${i + 3}m 12s · ${i + 40}.1k tokens'`,
+  ).join("\n");
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '%s\\n' '  kicking off ten concept builds in parallel now.'
+  printf '%s\\n' '✳ Waiting for 10 background agents to finish'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents · ↓ to manage'
+  printf '%s\\n' '  ⏺ main'
+${agentRows}
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "running");
+    assert.equal(summaries[0]?.runtime.activity, "busy");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Claude Code is waiting on background agents");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("live preview stays idle when background-agents text only appears in prose", async () => {
   // The background-agents phrase appears only inside transcript prose, not as a
   // live spinner line, so the anchored matcher must leave the pane idle.

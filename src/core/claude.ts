@@ -601,6 +601,11 @@ function detectClaudeBusy(text: string, lower: string): boolean {
 // leading spinner glyph such as ✻/✳) so the same phrase quoted in transcript
 // prose—e.g. the user asking about the status message—does not keep an idle
 // pane pinned to busy until it scrolls away.
+//
+// This scans the whole captured buffer rather than just the tail: the status
+// line renders above the prompt while one row per agent stacks below the
+// footer, so a large agent list (8+) would otherwise push the marker out of a
+// last-N-lines window. Anchoring keeps the wider scan safe from prose matches.
 function detectClaudeBackgroundAgents(lines: string[]): boolean {
   return lines.some((line) => {
     const status = line.trim().replace(/^[^\p{L}\p{N}]+\s*/u, "");
@@ -649,7 +654,7 @@ function classifyClaudePreview(
     };
   }
 
-  if (detectClaudeBackgroundAgents(recentLines)) {
+  if (detectClaudeBackgroundAgents(nonEmptyLines)) {
     return {
       activity: "busy",
       detail: "Claude Code is waiting on background agents",
