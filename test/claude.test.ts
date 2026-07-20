@@ -433,6 +433,56 @@ exit 1
   }
 });
 
+test("live preview reports busy while Claude waits on background agents", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '  on it and fork-dial \xe2\x80\x94 then I will run the full verification.\n'
+  printf '\xe2\x9c\xbb Waiting for 2 background agents to finish\n'
+  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n'
+  printf '\xe2\x9d\xaf \n'
+  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n'
+  printf '  auto mode on (shift+tab to cycle) \xc2\xb7 \xe2\x86\x90 for agents \xc2\xb7 \xe2\x86\x93 to manage\n'
+  printf '  \xe2\x97\xaf general-purpose  Build fork-ledger piece   20m 51s \xc2\xb7 73.8k tokens\n'
+  exit 0
+fi
+exit 1
+`);
+  const stateDir = createClaudeStateDir([
+    {
+      version: 1,
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/claude-project",
+      title: "Background Agents Session",
+      status: "running",
+      activity: "busy",
+      sourceEventType: "PreToolUse",
+      updatedAt: Date.now() - 5 * 60_000,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: stateDir,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "running");
+    assert.equal(summaries[0]?.runtime.activity, "busy");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Claude Code is waiting on background agents");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("Claude runtime falls back to preview and command classification", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "capture-pane" ]; then

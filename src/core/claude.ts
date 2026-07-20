@@ -590,6 +590,19 @@ function detectClaudeBusy(text: string, lower: string): boolean {
   return lower.includes("esc to interrupt") || /…\s*\(\s*\d+\s*[hms]/.test(text);
 }
 
+// When Claude delegates to background subagents (the Task tool) it can sit on a
+// "Waiting for N background agents to finish" spinner. In that state the footer
+// drops "esc to interrupt" and each agent row reports its own elapsed time
+// instead of the main spinner's "… (1m 2s)" format, so detectClaudeBusy misses
+// it and the pane would otherwise fall through to the idle default. The parent
+// session is still actively blocked on that work, so treat it as busy.
+function detectClaudeBackgroundAgents(lower: string): boolean {
+  return (
+    /waiting for \d+ background agents?/.test(lower) ||
+    /\d+ background agents? (?:to finish|running)/.test(lower)
+  );
+}
+
 // Claude's slash-command menus (/effort, /model, /config, …) open an
 // interactive overlay whose footer offers confirm/cancel and navigation hints.
 // These block on user interaction, so they count as "waiting" rather than idle.
@@ -628,6 +641,14 @@ function classifyClaudePreview(
       activity: "busy",
       detail: "Claude Code appears to be waiting for a response",
       status: "waiting-question",
+    };
+  }
+
+  if (detectClaudeBackgroundAgents(lower)) {
+    return {
+      activity: "busy",
+      detail: "Claude Code is waiting on background agents",
+      status: "running",
     };
   }
 
