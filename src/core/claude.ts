@@ -597,19 +597,29 @@ function detectClaudeBusy(text: string, lower: string): boolean {
 // it and the pane would otherwise fall through to the idle default. The parent
 // session is still actively blocked on that work, so treat it as busy.
 //
-// The match is anchored to the start of the live status line (after stripping a
-// leading spinner glyph such as ✻/✳) so the same phrase quoted in transcript
-// prose—e.g. the user asking about the status message—does not keep an idle
-// pane pinned to busy until it scrolls away.
+// Claude animates its "thinking" status with a rotating sparkle/asterisk glyph
+// (✳ ✶ ✷ ✻ ✽ · …). The live background-agents status row is exactly that
+// glyph followed by "Waiting for N background agents to finish".
+const CLAUDE_SPINNER_GLYPH = /^[\u00b7\u2217\u2722-\u273f]\s+/u;
+
+// The match requires a leading spinner glyph and then anchors on the phrase, so
+// it only fires on the live status row. A quoted, bulleted, or prompt-prefixed
+// mention of the same words in transcript prose (e.g. Claude explaining the old
+// spinner) is not stripped to "Waiting..." and stays idle.
 //
 // This scans the whole captured buffer rather than just the tail: the status
 // line renders above the prompt while one row per agent stacks below the
 // footer, so a large agent list (8+) would otherwise push the marker out of a
-// last-N-lines window. Anchoring keeps the wider scan safe from prose matches.
+// last-N-lines window. The strict glyph prefix keeps the wider scan safe from
+// prose matches.
 function detectClaudeBackgroundAgents(lines: string[]): boolean {
   return lines.some((line) => {
-    const status = line.trim().replace(/^[^\p{L}\p{N}]+\s*/u, "");
-    return /^waiting for \d+ background agents?\b/i.test(status);
+    const status = line.trim();
+    if (!CLAUDE_SPINNER_GLYPH.test(status)) {
+      return false;
+    }
+
+    return /^waiting for \d+ background agents?\b/i.test(status.replace(CLAUDE_SPINNER_GLYPH, ""));
   });
 }
 

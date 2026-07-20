@@ -536,11 +536,14 @@ exit 1
 });
 
 test("live preview stays idle when background-agents text only appears in prose", async () => {
-  // The background-agents phrase appears only inside transcript prose, not as a
-  // live spinner line, so the anchored matcher must leave the pane idle.
+  // The background-agents phrase appears only inside transcript prose — as a
+  // mid-line quote, a line-leading quote, and a bulleted mention — but never as
+  // a spinner-glyph status row, so the matcher must leave the pane idle.
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "capture-pane" ]; then
   printf '%s\\n' '❯ Why did it say "Waiting for 2 background agents to finish" earlier?'
+  printf '%s\\n' '  "Waiting for 2 background agents to finish" was the old status line.'
+  printf '%s\\n' '  - Waiting for 3 background agents to finish only shows while they run.'
   printf '%s\\n' '  ⎿  That was the spinner shown while your Task subagents ran.'
   printf '%s\\n' '─────'
   printf '%s\\n' '❯ '
