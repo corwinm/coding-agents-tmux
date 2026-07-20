@@ -434,15 +434,18 @@ exit 1
 });
 
 test("live preview reports busy while Claude waits on background agents", async () => {
+  // Glyphs are written literally (not via printf \xHH escapes) so the bytes
+  // reach the classifier as real UTF-8 — the leading spinner glyph must decode
+  // correctly for the anchored background-agents matcher to strip it.
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "capture-pane" ]; then
-  printf '  on it and fork-dial \xe2\x80\x94 then I will run the full verification.\n'
-  printf '\xe2\x9c\xbb Waiting for 2 background agents to finish\n'
-  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n'
-  printf '\xe2\x9d\xaf \n'
-  printf '\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\xe2\x94\x80\n'
-  printf '  auto mode on (shift+tab to cycle) \xc2\xb7 \xe2\x86\x90 for agents \xc2\xb7 \xe2\x86\x93 to manage\n'
-  printf '  \xe2\x97\xaf general-purpose  Build fork-ledger piece   20m 51s \xc2\xb7 73.8k tokens\n'
+  printf '%s\\n' '  on it and fork-dial — then I will run the full verification.'
+  printf '%s\\n' '✻ Waiting for 2 background agents to finish'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents · ↓ to manage'
+  printf '%s\\n' '  ◯ general-purpose  Build fork-ledger piece   20m 51s · 73.8k tokens'
   exit 0
 fi
 exit 1
@@ -478,6 +481,45 @@ exit 1
     assert.equal(summaries[0]?.runtime.activity, "busy");
     assert.equal(summaries[0]?.runtime.source, "claude-preview");
     assert.equal(summaries[0]?.runtime.detail, "Claude Code is waiting on background agents");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("live preview stays idle when background-agents text only appears in prose", async () => {
+  // The background-agents phrase appears only inside transcript prose, not as a
+  // live spinner line, so the anchored matcher must leave the pane idle.
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '%s\\n' '❯ Why did it say "Waiting for 2 background agents to finish" earlier?'
+  printf '%s\\n' '  ⎿  That was the spinner shown while your Task subagents ran.'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents'
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
   } finally {
     restoreEnv();
   }

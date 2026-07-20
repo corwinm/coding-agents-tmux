@@ -596,11 +596,16 @@ function detectClaudeBusy(text: string, lower: string): boolean {
 // instead of the main spinner's "… (1m 2s)" format, so detectClaudeBusy misses
 // it and the pane would otherwise fall through to the idle default. The parent
 // session is still actively blocked on that work, so treat it as busy.
-function detectClaudeBackgroundAgents(lower: string): boolean {
-  return (
-    /waiting for \d+ background agents?/.test(lower) ||
-    /\d+ background agents? (?:to finish|running)/.test(lower)
-  );
+//
+// The match is anchored to the start of the live status line (after stripping a
+// leading spinner glyph such as ✻/✳) so the same phrase quoted in transcript
+// prose—e.g. the user asking about the status message—does not keep an idle
+// pane pinned to busy until it scrolls away.
+function detectClaudeBackgroundAgents(lines: string[]): boolean {
+  return lines.some((line) => {
+    const status = line.trim().replace(/^[^\p{L}\p{N}]+\s*/u, "");
+    return /^waiting for \d+ background agents?\b/i.test(status);
+  });
 }
 
 // Claude's slash-command menus (/effort, /model, /config, …) open an
@@ -644,7 +649,7 @@ function classifyClaudePreview(
     };
   }
 
-  if (detectClaudeBackgroundAgents(lower)) {
+  if (detectClaudeBackgroundAgents(recentLines)) {
     return {
       activity: "busy",
       detail: "Claude Code is waiting on background agents",
