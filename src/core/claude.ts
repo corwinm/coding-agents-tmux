@@ -590,6 +590,75 @@ function detectClaudeBusy(text: string, lower: string): boolean {
   return lower.includes("esc to interrupt") || /…\s*\(\s*\d+\s*[hms]/.test(text);
 }
 
+// When Claude delegates to background subagents (the Task tool) it can sit on a
+// "Waiting for N background agents to finish" spinner. In that state the footer
+// drops "esc to interrupt" and each agent row reports its own elapsed time
+// instead of the main spinner's "… (1m 2s)" format, so detectClaudeBusy misses
+// it and the pane would otherwise fall through to the idle default. The parent
+// session is still actively blocked on that work, so treat it as busy.
+//
+// Claude animates its "thinking" status with a rotating sparkle/asterisk glyph
+// (✳ ✶ ✷ ✻ ✽ · …). The live background-agents status row is exactly that
+// glyph followed by "Waiting for N background agents to finish".
+const CLAUDE_SPINNER_GLYPH = /^[\u00b7\u2217\u2722-\u273f]\s+/u;
+
+// Claude draws its input as a box: an optional live status line, a horizontal
+// rule, the ❯ prompt, another rule, then the footer (and any background-agent
+// rows). The rules are runs of the ─ box-drawing char.
+const CLAUDE_INPUT_PROMPT = /^\u276f(?:\s|$)/;
+const CLAUDE_BORDER_RULE = /\u2500{3,}/;
+
+// Extract the single "live status" line that Claude renders directly above the
+// input box's top rule. That slot is authoritative for the current turn: idle
+// panes show e.g. "✻ Churned for 1m", a working pane shows "✻ Waiting for N
+// background agents to finish". Copied/quoted status rows elsewhere in the
+// scrollback sit above this slot and are deliberately ignored.
+function getClaudeLiveStatusLine(lines: string[]): string | null {
+  let promptIndex = -1;
+  for (let i = lines.length - 1; i >= 0; i -= 1) {
+    if (CLAUDE_INPUT_PROMPT.test(lines[i]?.trim() ?? "")) {
+      promptIndex = i;
+      break;
+    }
+  }
+
+  if (promptIndex <= 0) {
+    return null;
+  }
+
+  // The top rule sits just above the prompt (allow a couple of lines of slack
+  // for wrapped input).
+  let borderIndex = -1;
+  for (let i = promptIndex - 1; i >= 0 && i >= promptIndex - 3; i -= 1) {
+    if (CLAUDE_BORDER_RULE.test(lines[i] ?? "")) {
+      borderIndex = i;
+      break;
+    }
+  }
+
+  if (borderIndex <= 0) {
+    return null;
+  }
+
+  const status = lines[borderIndex - 1]?.trim() ?? "";
+  return status || null;
+}
+
+// A background-agent wait is reported only when the live status slot itself
+// reads "<spinner glyph> Waiting for N background agents". Anchoring to that one
+// line (rather than scanning the whole buffer) keeps large agent lists working
+// — the status line stays above the prompt no matter how many rows stack below
+// the footer — while ignoring quoted, bulleted, or copied mentions in prose.
+function detectClaudeBackgroundAgents(lines: string[]): boolean {
+  const status = getClaudeLiveStatusLine(lines);
+
+  if (!status || !CLAUDE_SPINNER_GLYPH.test(status)) {
+    return false;
+  }
+
+  return /^waiting for \d+ background agents?\b/i.test(status.replace(CLAUDE_SPINNER_GLYPH, ""));
+}
+
 // Claude's slash-command menus (/effort, /model, /config, …) open an
 // interactive overlay whose footer offers confirm/cancel and navigation hints.
 // These block on user interaction, so they count as "waiting" rather than idle.
@@ -628,6 +697,14 @@ function classifyClaudePreview(
       activity: "busy",
       detail: "Claude Code appears to be waiting for a response",
       status: "waiting-question",
+    };
+  }
+
+  if (detectClaudeBackgroundAgents(nonEmptyLines)) {
+    return {
+      activity: "busy",
+      detail: "Claude Code is waiting on background agents",
+      status: "running",
     };
   }
 

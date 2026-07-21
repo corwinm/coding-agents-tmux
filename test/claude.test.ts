@@ -433,6 +433,192 @@ exit 1
   }
 });
 
+test("live preview reports busy while Claude waits on background agents", async () => {
+  // Glyphs are written literally (not via printf \xHH escapes) so the bytes
+  // reach the classifier as real UTF-8 — the leading spinner glyph must decode
+  // correctly for the anchored background-agents matcher to strip it.
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '%s\\n' '  on it and fork-dial — then I will run the full verification.'
+  printf '%s\\n' '✻ Waiting for 2 background agents to finish'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents · ↓ to manage'
+  printf '%s\\n' '  ◯ general-purpose  Build fork-ledger piece   20m 51s · 73.8k tokens'
+  exit 0
+fi
+exit 1
+`);
+  const stateDir = createClaudeStateDir([
+    {
+      version: 1,
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/claude-project",
+      title: "Background Agents Session",
+      status: "running",
+      activity: "busy",
+      sourceEventType: "PreToolUse",
+      updatedAt: Date.now() - 5 * 60_000,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: stateDir,
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "running");
+    assert.equal(summaries[0]?.runtime.activity, "busy");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Claude Code is waiting on background agents");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("live preview reports busy with a large background-agent list past the tail window", async () => {
+  // With many agents the status line renders well above the prompt while one
+  // row per agent stacks below the footer, pushing "Waiting for N background
+  // agents" outside the last dozen lines. The detector must scan the whole
+  // captured buffer to still see it.
+  const agentRows = Array.from(
+    { length: 10 },
+    (_unused, i) =>
+      `  printf '%s\\n' '  ◯ general-purpose  Build concept ${i + 1}   ${i + 3}m 12s · ${i + 40}.1k tokens'`,
+  ).join("\n");
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '%s\\n' '  kicking off ten concept builds in parallel now.'
+  printf '%s\\n' '✳ Waiting for 10 background agents to finish'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents · ↓ to manage'
+  printf '%s\\n' '  ⏺ main'
+${agentRows}
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "running");
+    assert.equal(summaries[0]?.runtime.activity, "busy");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+    assert.equal(summaries[0]?.runtime.detail, "Claude Code is waiting on background agents");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("live preview stays idle when a copied spinner status row sits in the scrollback", async () => {
+  // Claude explains the previous UI by echoing an exact status row into the
+  // transcript. The genuine live status slot (directly above the prompt rule)
+  // reads an idle "Churned for" summary, so the copied row must be ignored.
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '%s\\n' '  Earlier, while the Task agents ran, the pane showed:'
+  printf '%s\\n' '✳ Waiting for 2 background agents to finish'
+  printf '%s\\n' '  Now they have all finished and I have merged the results.'
+  printf '%s\\n' '✻ Churned for 45s'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents'
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("live preview stays idle when background-agents text only appears in prose", async () => {
+  // The background-agents phrase appears only inside transcript prose — as a
+  // mid-line quote, a line-leading quote, and a bulleted mention — but never as
+  // a spinner-glyph status row, so the matcher must leave the pane idle.
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "capture-pane" ]; then
+  printf '%s\\n' '❯ Why did it say "Waiting for 2 background agents to finish" earlier?'
+  printf '%s\\n' '  "Waiting for 2 background agents to finish" was the old status line.'
+  printf '%s\\n' '  - Waiting for 3 background agents to finish only shows while they run.'
+  printf '%s\\n' '  ⎿  That was the spinner shown while your Task subagents ran.'
+  printf '%s\\n' '─────'
+  printf '%s\\n' '❯ '
+  printf '%s\\n' '─────'
+  printf '%s\\n' '  ⏵⏵ auto mode on (shift+tab to cycle) · ← for agents'
+  exit 0
+fi
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
+    ),
+  });
+
+  try {
+    const summaries = await attachRuntimeToPanes([
+      createDiscoveredClaudePane({
+        target: "work:1.0",
+        paneId: "%1",
+        currentPath: "/tmp/claude-project",
+      }),
+    ]);
+
+    assert.equal(summaries[0]?.runtime.status, "idle");
+    assert.equal(summaries[0]?.runtime.activity, "idle");
+    assert.equal(summaries[0]?.runtime.source, "claude-preview");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("Claude runtime falls back to preview and command classification", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "capture-pane" ]; then
