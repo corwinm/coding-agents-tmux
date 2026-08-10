@@ -13,6 +13,29 @@ It helps you:
 
 This project was originally designed for `opencode` but has been extended to support `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
 
+## How this compares to Herdr
+
+[coding-agents-tmux](https://github.com/corwinm/coding-agents-tmux) adds coding-agent awareness to an existing tmux setup. [Herdr](https://github.com/herdrdev/herdr) is a separate terminal multiplexer built around coding agents. They solve a similar navigation problem, but at different layers.
+
+|                            | coding-agents-tmux                                                                                                              | Herdr                                                                                                                  |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Multiplexer                | Uses your existing tmux server, config, plugins, sessions, and key bindings                                                     | Replaces tmux for the sessions it manages with its own panes, tabs, workspaces, and client                             |
+| Best fit                   | You already use tmux and want agent state, waiting-session shortcuts, and status-line integration without changing multiplexers | You want an agent-focused terminal runtime and are comfortable adopting a separate multiplexer                         |
+| Agent state                | Combines tmux pane metadata and captures with optional agent hooks, plugins, state files, and OpenCode providers                | Reads its own terminal buffers and foreground processes, with optional agent integrations reporting over its local API |
+| State detail               | Distinguishes running, idle, new, free-form input, multiple-choice questions, and unknown state                                 | Uses working, blocked, idle, and unknown pane states, with done derived for unseen completed work                      |
+| Agent coverage             | Focused support for OpenCode, Codex, Pi, Claude Code, and Kiro CLI                                                              | Broader built-in detection across many agent CLIs                                                                      |
+| Navigation and UI          | tmux menus, popups, key bindings, status formats, and existing tmux themes                                                      | A dedicated agent sidebar and UI, plus its own CLI and socket API                                                      |
+| Persistence and remote use | Uses tmux persistence and whatever SSH, mosh, or tmux workflow you already have                                                 | Owns persistent terminal sessions and provides its own attach and remote workflow                                      |
+| Extensibility              | TypeScript providers and agent-specific hooks or plugins                                                                        | Declarative screen-detection manifests plus agent integrations and an API                                              |
+
+Choose this plugin when tmux is already the center of your terminal workflow. It keeps your current sessions and configuration intact, and adds a quick way to find the agent that needs attention.
+
+Choose Herdr when you want the multiplexer itself to understand agents and expose that state through a dedicated UI and API. Owning the terminal gives Herdr broader process and screen visibility, but using it means managing those panes in Herdr rather than tmux.
+
+The two projects can be installed on the same machine for separate workflows, but they do not share pane state. This plugin discovers tmux panes; it cannot inspect individual panes nested inside a Herdr session.
+
+State accuracy in either project depends on the agent. Native hooks and plugins provide stronger lifecycle signals, while screen-based detection can need updates when an agent changes its terminal UI.
+
 ## Install
 
 Add the plugin to `~/.tmux.conf`:
