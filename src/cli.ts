@@ -479,7 +479,7 @@ async function runPopupUiCommand(options: PopupUiOptions): Promise<void> {
     process.exit(0);
   }
 
-  await switchToPane(pane.pane);
+  await switchToPane(pane.pane, options.client);
   process.exit(0);
 }
 
@@ -514,10 +514,11 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
     switchArgs.push("--running");
   }
 
-  const popupCommand = buildSelfCommand(switchArgs);
-
   if (options.printCommand) {
-    console.log(popupCommand);
+    if (options.client) {
+      switchArgs.push("--client", options.client);
+    }
+    console.log(buildSelfCommand(switchArgs));
     return;
   }
 
@@ -526,6 +527,10 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
   }
 
   const client = options.client ? await resolveTmuxClient(options.client) : undefined;
+  if (client) {
+    switchArgs.push("--client", client);
+  }
+  const popupCommand = buildSelfCommand(switchArgs);
   const tmuxArgs = [
     "display-popup",
     ...(client ? ["-c", client] : []),
@@ -991,6 +996,7 @@ async function main(): Promise<void> {
     .option("--waiting", "Only include panes waiting for question or freeform input")
     .option("--busy", "Only include panes that are running or waiting for user response")
     .option("--running", "Only include panes with runtime status 'running'")
+    .option("--client <client>", "Target the tmux client that opened this popup")
     .action(runPopupUiCommand);
 
   program

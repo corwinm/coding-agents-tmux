@@ -134,8 +134,10 @@ exit 1
 
 test("Pi plugin supports CODING_AGENTS_TMUX_PI_STATE_DIR as a state dir override", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
+  const emptyPath = mkdtempSync(join(tmpdir(), "coding-agents-tmux-no-tmux-"));
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
+    PATH: emptyPath,
     TMUX_PANE: undefined,
   });
 

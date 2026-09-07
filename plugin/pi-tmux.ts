@@ -101,11 +101,15 @@ function resolveTmuxPaneTarget(paneId: string | null): string | null {
 function refreshTmuxClients() {
   runTmuxCommand(["refresh-client", "-S"]);
 
-  const configured = runTmuxCommand([
+  const notificationResult = runTmuxCommand([
     "show-option",
     "-gqv",
     "@coding-agents-tmux-notify-command",
-  ]).stdout.trim();
+  ]);
+  const configured =
+    notificationResult.status === 0 && typeof notificationResult.stdout === "string"
+      ? notificationResult.stdout.trim()
+      : "";
 
   if (configured) {
     spawnSync(process.env.SHELL ?? "/bin/sh", ["-c", configured], { stdio: "ignore" });

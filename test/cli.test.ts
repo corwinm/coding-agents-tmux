@@ -1037,6 +1037,7 @@ exit 1
     const log = readFileSync(fakeTmux.logPath, "utf8");
     assert.match(log, /list-clients -F/);
     assert.match(log, /display-popup -c \/dev\/ttys002 -E/);
+    assert.match(log, /popup-ui.*--client.*\/dev\/ttys002/);
   } finally {
     restoreEnv();
   }

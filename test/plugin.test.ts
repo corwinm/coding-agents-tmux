@@ -132,6 +132,33 @@ test("plugin switches back to running when session.status explicitly reports bus
   }
 });
 
+test("plugin tolerates tmux disappearing before its debounced refresh", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
+  const emptyPath = mkdtempSync(join(tmpdir(), "coding-agents-tmux-no-tmux-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: stateDir,
+    PATH: emptyPath,
+    TMUX: "/tmp/tmux-test/default,1,0",
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    const { CodingAgentsTmuxPlugin } = await loadPlugin();
+    const plugin = await CodingAgentsTmuxPlugin({
+      directory: "/tmp/project",
+      project: { name: "Project" },
+      client: { app: { log: async () => null } },
+    });
+
+    await plugin.event({ event: { type: "session.idle", timeUpdated: 100 } });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    assert.equal(readOnlyStateFile(stateDir).status, "idle");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("plugin notifies the configured integration after its debounced refresh", async () => {
   const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-notify-"));
   const stateDir = join(dir, "state");
