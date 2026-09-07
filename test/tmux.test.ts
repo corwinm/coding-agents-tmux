@@ -8,6 +8,7 @@ import {
   capturePanePreview,
   captureWindowPreview,
   buildSwitchToPaneCommand,
+  chooseTmuxClient,
   detectAgentPane,
   discoverAgentPanes,
   discoverAgentPanesFromList,
@@ -408,6 +409,35 @@ test("buildSwitchToPaneCommand targets the pane correctly inside and outside tmu
     "-t",
     "work:4.2",
   ]);
+
+  assert.deepEqual(buildSwitchToPaneCommand(pane, true, "/dev/ttys009"), [
+    "tmux",
+    "switch-client",
+    "-c",
+    "/dev/ttys009",
+    "-t",
+    "work",
+    ";",
+    "select-window",
+    "-t",
+    "work:4",
+    ";",
+    "select-pane",
+    "-t",
+    "work:4.2",
+  ]);
+});
+
+test("chooseTmuxClient resolves auto by recent activity and validates explicit clients", () => {
+  const clients = [
+    { name: "/dev/ttys001", activity: 100 },
+    { name: "/dev/ttys002", activity: 300 },
+  ];
+
+  assert.equal(chooseTmuxClient(clients, "auto"), "/dev/ttys002");
+  assert.equal(chooseTmuxClient(clients, "/dev/ttys001"), "/dev/ttys001");
+  assert.throws(() => chooseTmuxClient([], "auto"), /No attached tmux clients/);
+  assert.throws(() => chooseTmuxClient(clients, "/dev/ttys999"), /No attached tmux client/);
 });
 
 test("listAllPanes and getCurrentTmuxTarget call tmux and parse their output", async () => {

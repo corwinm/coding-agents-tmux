@@ -8,8 +8,11 @@ const repoRoot = path.resolve(import.meta.dirname, "..");
 const defaultFiles = [
   "bin/coding-agents-tmux",
   "scripts/sync-tmux-plugin.sh",
+  "scripts/notify-status-change.sh",
   "scripts/tmux-menu-switch.sh",
   "scripts/tmux-popup-switch.sh",
+  "integrations/external/focus-and-popup.sh",
+  "integrations/sketchybar/agents.sh",
 ];
 
 function getMode(args) {

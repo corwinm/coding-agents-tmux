@@ -104,6 +104,16 @@ function refreshTmuxClients() {
   if (result.status !== 0) {
     return;
   }
+
+  const configured = runTmuxCommand([
+    "show-option",
+    "-gqv",
+    "@coding-agents-tmux-notify-command",
+  ]).stdout.trim();
+
+  if (configured) {
+    spawnSync(process.env.SHELL ?? "/bin/sh", ["-c", configured], { stdio: "ignore" });
+  }
 }
 
 function toFileName(input: { directory: string; paneId: string | null }) {

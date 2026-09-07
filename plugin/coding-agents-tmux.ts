@@ -48,6 +48,15 @@ function scheduleTmuxStatusRefresh() {
   tmuxRefreshTimer = setTimeout(() => {
     tmuxRefreshTimer = null;
     spawnSync("tmux", ["refresh-client", "-S"], { stdio: "ignore" });
+    const configured = spawnSync(
+      "tmux",
+      ["show-option", "-gqv", "@coding-agents-tmux-notify-command"],
+      { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+    ).stdout.trim();
+
+    if (configured) {
+      spawnSync(process.env.SHELL ?? "/bin/sh", ["-c", configured], { stdio: "ignore" });
+    }
   }, 150);
 }
 

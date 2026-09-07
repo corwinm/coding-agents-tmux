@@ -80,9 +80,16 @@ if [ "$1" = "refresh-client" ]; then
   printf '%s\n' "$*" >> __LOG_PATH__
   exit 0
 fi
+if [ "$1" = "show-option" ]; then
+  printf 'integration-notify __LOG_PATH__\n'
+  exit 0
+fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
+  const notifyPath = join(fakeTmux.pathEntry, "integration-notify");
+  writeFileSync(notifyPath, "#!/usr/bin/env bash\nprintf 'notified\\n' >> \"$1\"\n", "utf8");
+  chmodSync(notifyPath, 0o755);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
     CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
@@ -119,6 +126,7 @@ exit 1
     assert.equal(state.target, "work:1.1");
     assert.equal(state.status, "running");
     assert.match(log, /refresh-client -S/);
+    assert.match(log, /notified/);
   } finally {
     restoreEnv();
   }

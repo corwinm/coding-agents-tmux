@@ -401,7 +401,7 @@ install_pi_extension() {
 
 main() {
   local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex install_pi install_claude auto_install_value status_text_segment status_inline_segment status_tone_segment status_refresh_command
-  local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown
+  local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown notify_command
   local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key
   menu_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-menu-key' 'O')")"
   popup_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-popup-key' 'P')")"
@@ -413,6 +413,7 @@ main() {
   popup_width="$(get_tmux_option '@coding-agents-tmux-popup-width' '100%')"
   popup_height="$(get_tmux_option '@coding-agents-tmux-popup-height' '100%')"
   popup_title="$(get_tmux_option '@coding-agents-tmux-popup-title' 'Coding Agent Sessions')"
+  notify_command="$(get_tmux_option '@coding-agents-tmux-notify-command' '')"
   if [ -n "$(tmux show-option -gqv '@coding-agents-tmux-auto-install')" ]; then
     auto_install_value="$(normalize_auto_install_value "$(get_tmux_option '@coding-agents-tmux-auto-install' '')")"
 
@@ -532,7 +533,7 @@ main() {
   status_text_command="cd '$CURRENT_DIR' && CODING_AGENTS_TMUX_STATUS_PREFIX='$status_prefix' CODING_AGENTS_TMUX_STATUS_SHOW_PREFIX='off' '$CURRENT_DIR/bin/coding-agents-tmux' status --style 'plain' --provider '$provider'"
   status_inline_command="cd '$CURRENT_DIR' && CODING_AGENTS_TMUX_STATUS_PREFIX='$status_prefix' CODING_AGENTS_TMUX_STATUS_SHOW_PREFIX='off' CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' CODING_AGENTS_TMUX_STATUS_COLOR_BUSY='$status_color_busy' CODING_AGENTS_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' CODING_AGENTS_TMUX_STATUS_COLOR_IDLE='$status_color_idle' CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/coding-agents-tmux' status --style 'tmux' --provider '$provider'"
   status_tone_command="cd '$CURRENT_DIR' && '$CURRENT_DIR/bin/coding-agents-tmux' status --tone --provider '$provider'"
-  status_refresh_command="run-shell -b 'tmux refresh-client -S >/dev/null 2>&1 || true'"
+  status_refresh_command="run-shell -b \"'$CURRENT_DIR/scripts/notify-status-change.sh'\""
   bind_command="'$menu_script' --provider '$provider'"
   waiting_bind_command="'$menu_script' --provider '$provider' --waiting"
 
@@ -633,7 +634,11 @@ main() {
       tmux set-option -gu '@coding-agents-tmux-status-option'
     fi
   else
-    clear_status_hooks
+    if [ -n "$notify_command" ]; then
+      configure_status_hooks "$status_refresh_command"
+    else
+      clear_status_hooks
+    fi
     tmux set-option -gu '@coding-agents-tmux-status-format'
     tmux set-option -gu '@coding-agents-tmux-status-text'
     tmux set-option -gu '@coding-agents-tmux-status-inline-format'

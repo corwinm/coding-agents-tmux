@@ -273,6 +273,7 @@ test("buildTmuxSnippet includes provider, server map, popup filter, and refresh 
   assert.match(snippet, /--waiting/);
   assert.match(snippet, /set-hook -g client-attached\[200\]/);
   assert.match(snippet, /run-shell -b/);
+  assert.match(snippet, /notify/);
   assert.match(snippet, /set -g status-right/);
 });
 
@@ -317,7 +318,18 @@ test("buildStatusOutput renders summary, tone, and summary json outside tmux", (
   );
   assert.deepEqual(
     JSON.parse(buildStatusOutput(panes, { summary: true, json: true }, { tmuxAvailable: false })),
-    { mode: "summary", total: 3, busy: 2, waiting: 1 },
+    {
+      mode: "summary",
+      total: 3,
+      busy: 2,
+      waiting: 1,
+      running: 1,
+      idle: 1,
+      new: 0,
+      unknown: 0,
+      tone: "waiting",
+      summary: "󰚩 |   ",
+    },
   );
 });
 
@@ -904,6 +916,12 @@ exit 1
       total: 3,
       busy: 2,
       waiting: 1,
+      running: 1,
+      idle: 1,
+      new: 0,
+      unknown: 0,
+      tone: "waiting",
+      summary: "󰚩 |   ",
     });
     assert.equal(currentOutput.exitCode, 0);
     assert.equal(currentOutput.stdoutText.trim(), "󰚩 |  waiting | ");
@@ -984,4 +1002,54 @@ test("CLI popup --print-command prints the inner popup-ui command without tmux",
   assert.match(result.stdoutText, /--server-map/);
   assert.match(result.stdoutText, /\/tmp\/server-map\.json/);
   assert.match(result.stdoutText, /--busy/);
+});
+
+test("CLI popup --client auto targets the most recently active tmux client outside tmux", async () => {
+  const fakeTmux = installFakeTmux(`
+printf '%s\n' "$*" >> '__LOG_PATH__'
+if [ "$1" = "list-clients" ]; then
+  printf '/dev/ttys001\t100\n/dev/ttys002\t300\n'
+  exit 0
+fi
+if [ "$1" = "display-popup" ]; then
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    TMUX: undefined,
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "popup", "--client", "auto"]);
+
+    assert.equal(result.exitCode, 0);
+    const log = readFileSync(fakeTmux.logPath, "utf8");
+    assert.match(log, /list-clients -F/);
+    assert.match(log, /display-popup -t \/dev\/ttys002 -E/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI notify refreshes tmux and invokes the configured integration", async () => {
+  const fakeTmux = installFakeTmux(`
+printf '%s\n' "$*" >> '__LOG_PATH__'
+if [ "$1" = "refresh-client" ]; then exit 0; fi
+if [ "$1" = "show-option" ]; then printf 'printf notified >> __LOG_PATH__\n'; exit 0; fi
+exit 1
+`);
+  const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+
+  try {
+    const result = await runCommand([BIN_PATH, "notify"]);
+    assert.equal(result.exitCode, 0);
+    const log = readFileSync(fakeTmux.logPath, "utf8");
+    assert.match(log, /refresh-client -S/);
+    assert.match(log, /notified/);
+  } finally {
+    restoreEnv();
+  }
 });

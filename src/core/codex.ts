@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 
 import { getPreferredStateDir, getStateDirCandidates } from "../naming.ts";
 import { runCommand } from "../runtime.ts";
+import { notifyIntegration } from "./notifications.ts";
 import type { RuntimeInfo, RuntimeStatus } from "../types.ts";
 
 export interface CodexStateFile {
@@ -286,6 +287,7 @@ export async function persistCodexHookState(rawInput: string): Promise<void> {
 
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(filePath, JSON.stringify(nextState, null, 2), "utf8");
+  await notifyIntegration();
 }
 
 export function readCodexStateEntries(): CodexStateEntry[] {

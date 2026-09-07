@@ -26,12 +26,14 @@ import {
   installCodexIntegration,
   persistCodexHookState,
 } from "./core/codex.ts";
+import { notifyIntegration } from "./core/notifications.ts";
 import { buildInspectDebugInfo, buildServerMapTemplate } from "./core/opencode.ts";
 import { attachRuntimeToPanes, getRuntimeProviderHelpText } from "./core/runtime.ts";
 import {
   discoverAgentPanes,
   findDiscoveredPaneByTarget,
   getCurrentTmuxTarget,
+  resolveTmuxClient,
   switchToPane,
 } from "./core/tmux.ts";
 import { PRIMARY_CLI_NAME } from "./naming.ts";
@@ -42,6 +44,7 @@ import type {
   PaneRuntimeSummary,
   PaneTarget,
   RuntimeProviderOptions,
+  RuntimeStatus,
 } from "./types.ts";
 
 interface ListOptions extends PaneFilterOptions, RuntimeProviderOptions {
@@ -58,7 +61,9 @@ interface InspectOptions extends RuntimeProviderOptions {
   watch?: boolean;
 }
 
-interface SwitchOptions extends PaneFilterOptions, RuntimeProviderOptions {}
+interface SwitchOptions extends PaneFilterOptions, RuntimeProviderOptions {
+  client?: string;
+}
 
 interface ServerMapTemplateOptions {
   basePort?: string;
@@ -168,7 +173,6 @@ const STATUS_REFRESH_HOOKS = [
   "window-linked",
   "window-unlinked",
 ] as const;
-const STATUS_REFRESH_HOOK_COMMAND = "run-shell -b 'tmux refresh-client -S >/dev/null 2>&1 || true'";
 
 async function loadPaneRuntimeSummaries(options: RuntimeProviderOptions = {}) {
   const panes = await discoverAgentPanes();
@@ -461,8 +465,9 @@ async function runSwitchFilteredCommand(
   }
 
   const pane = target ? requirePaneByTarget(panes, target) : await promptForPaneSelection(panes);
+  const client = options.client ? await resolveTmuxClient(options.client) : undefined;
 
-  await switchToPane(pane.pane);
+  await switchToPane(pane.pane, client);
 }
 
 async function runPopupUiCommand(options: PopupUiOptions): Promise<void> {
@@ -516,12 +521,14 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
     return;
   }
 
-  if (!process.env.TMUX) {
-    throw new Error("Popup mode requires running inside tmux");
+  if (!process.env.TMUX && !options.client) {
+    throw new Error("Popup mode requires running inside tmux or passing --client");
   }
 
+  const client = options.client ? await resolveTmuxClient(options.client) : undefined;
   const tmuxArgs = [
     "display-popup",
+    ...(client ? ["-t", client] : []),
     "-E",
     "-w",
     options.width ?? "100%",
@@ -620,12 +627,29 @@ export function buildStatusOutput(
     }
 
     if (options.json) {
+      const countStatus = (status: RuntimeStatus) =>
+        panes.filter((entry) => entry.runtime.status === status).length;
       const busy = panes.filter((entry) => entry.runtime.activity === "busy").length;
       const waiting = panes.filter(
         (entry) =>
           entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input",
       ).length;
-      return JSON.stringify({ mode: "summary", total: panes.length, busy, waiting }, null, 2);
+      return JSON.stringify(
+        {
+          mode: "summary",
+          total: panes.length,
+          busy,
+          waiting,
+          running: countStatus("running"),
+          idle: countStatus("idle"),
+          new: countStatus("new"),
+          unknown: countStatus("unknown"),
+          tone: renderStatusTone(null, panes),
+          summary: renderStatusSummary(null, panes, renderOptions),
+        },
+        null,
+        2,
+      );
     }
 
     return renderStatusSummary(null, panes, renderOptions);
@@ -693,6 +717,10 @@ async function runStatusCommand(options: StatusOptions): Promise<void> {
   );
 }
 
+async function runNotifyCommand(): Promise<void> {
+  await notifyIntegration();
+}
+
 export function getPopupFilterArgs(filter: TmuxConfigOptions["popupFilter"]): string[] {
   switch (filter) {
     case "busy":
@@ -746,9 +774,11 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
   const menuCommand = buildMenuScriptCommand(switchArgs);
   const waitingMenuCommand = buildMenuScriptCommand(waitingArgs);
   const statusCommand = buildShellRunCommand(statusArgs);
+  const notificationScript = join(REPO_ROOT, "scripts", "notify-status-change.sh");
+  const statusRefreshHookCommand = `run-shell -b ${tmuxDoubleQuote(notificationScript)}`;
   const statusRefreshHookLines = STATUS_REFRESH_HOOKS.map(
     (hook, index) =>
-      `set-hook -g ${hook}[${200 + index}] ${tmuxDoubleQuote(STATUS_REFRESH_HOOK_COMMAND)}`,
+      `set-hook -g ${hook}[${200 + index}] ${tmuxDoubleQuote(statusRefreshHookCommand)}`,
   );
   const menuKey = options.menuKey ?? "O";
   const popupKey = options.popupKey ?? "P";
@@ -876,6 +906,7 @@ async function main(): Promise<void> {
       "Only allow panes that are running or waiting for user response as candidates",
     )
     .option("--running", "Only allow panes with runtime status 'running' as candidates")
+    .option("--client <client>", "Target an attached tmux client by name, or use auto")
     .action(runSwitchFilteredCommand);
 
   program
@@ -936,6 +967,7 @@ async function main(): Promise<void> {
     .option("--height <value>", "Popup height", "100%")
     .option("--title <value>", "Popup title", "Coding Agent Sessions")
     .option("--print-command", "Print the popup's inner switch command instead of opening tmux")
+    .option("--client <client>", "Target an attached tmux client by name, or use auto")
     .action(runPopupCommand);
 
   program
@@ -978,6 +1010,11 @@ async function main(): Promise<void> {
       "JSON object or file path mapping pane targets to server endpoints",
     )
     .action(runStatusCommand);
+
+  program
+    .command("notify")
+    .description("Refresh tmux status and invoke the configured integration notification command")
+    .action(runNotifyCommand);
 
   program
     .command("tmux-config")

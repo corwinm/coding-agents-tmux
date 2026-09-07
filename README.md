@@ -258,6 +258,38 @@ set -ag status-right " #[fg=colour81]agents #[default]#{@coding-agents-tmux-stat
 
 `manual` mode is the default. `#{E:@catppuccin_status_agents}` gives Catppuccin users a native-looking module, `#{@coding-agents-tmux-status-inline-format}` gives other themes a tone-aware inline segment, and `#{@coding-agents-tmux-status-text}` gives a plain live summary text export for fully custom wrappers. `append` mode restores the old behavior and appends automatically.
 
+## External integrations
+
+The CLI exposes the same state used by the tmux segment as a stable machine-readable summary:
+
+```bash
+./bin/coding-agents-tmux status --summary --json
+```
+
+The JSON includes totals by state, the aggregate tone, and the rendered summary. External status bars and widgets can query it without duplicating agent detection.
+
+Set a generic notification command to update an external integration whenever agent state or the tmux pane layout changes:
+
+```tmux
+set -g @coding-agents-tmux-notify-command 'sketchybar --trigger coding_agents_changed'
+```
+
+The command is optional, runs after state changes, and is ignored when unset. It remains active when the tmux status segment is disabled.
+
+Bundled examples:
+
+- [`integrations/sketchybar`](integrations/sketchybar) renders the global agent summary in SketchyBar without polling
+- [`integrations/external`](integrations/external) focuses a configured terminal and launches the chooser from AeroSpace, Raycast, Hammerspoon, or another external launcher
+
+To open the popup outside tmux, target an attached client explicitly or let the CLI select the most recently active one:
+
+```bash
+./bin/coding-agents-tmux popup --client auto
+./bin/coding-agents-tmux popup --client /dev/ttys000 --waiting
+```
+
+The same `--client` option is available on `switch`. This only targets tmux; terminal placement and native focus remain the responsibility of the external window manager or launcher.
+
 ## Configuration
 
 Available tmux options:
@@ -288,6 +320,7 @@ Available tmux options:
 - `@coding-agents-tmux-status-color-busy` tmux color for busy state, default `colour220`
 - `@coding-agents-tmux-status-color-waiting` tmux color for waiting state, default `colour196`
 - `@coding-agents-tmux-status-color-unknown` tmux color for unknown/none state, default `colour244`
+- `@coding-agents-tmux-notify-command` optional shell command invoked after agent or tmux layout state changes
 
 ## Providers
 
@@ -493,5 +526,7 @@ Useful commands:
 ./bin/coding-agents-tmux list --provider plugin --waiting
 ./bin/coding-agents-tmux inspect <target> --provider plugin
 ./bin/coding-agents-tmux status --provider plugin --style tmux
+./bin/coding-agents-tmux status --summary --json
+./bin/coding-agents-tmux popup --client auto
 ./bin/coding-agents-tmux tmux-config --provider plugin
 ```
