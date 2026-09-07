@@ -6,6 +6,7 @@ import test from "node:test";
 
 import {
   buildStatusOutput,
+  buildStatusRefreshHookCommand,
   buildTmuxSnippet,
   filterPaneSummaries,
   getPopupFilterArgs,
@@ -275,6 +276,13 @@ test("buildTmuxSnippet includes provider, server map, popup filter, and refresh 
   assert.match(snippet, /run-shell -b/);
   assert.match(snippet, /notify/);
   assert.match(snippet, /set -g status-right/);
+});
+
+test("buildStatusRefreshHookCommand shell-escapes installation paths", () => {
+  assert.equal(
+    buildStatusRefreshHookCommand("/tmp/coding agents/notify-status-change.sh"),
+    `run-shell -b "'/tmp/coding agents/notify-status-change.sh'"`,
+  );
 });
 
 test("getTmuxConfigPath and updateTmuxConfig choose defaults, append, and replace marked blocks", () => {
@@ -1028,7 +1036,7 @@ exit 1
     assert.equal(result.exitCode, 0);
     const log = readFileSync(fakeTmux.logPath, "utf8");
     assert.match(log, /list-clients -F/);
-    assert.match(log, /display-popup -t \/dev\/ttys002 -E/);
+    assert.match(log, /display-popup -c \/dev\/ttys002 -E/);
   } finally {
     restoreEnv();
   }

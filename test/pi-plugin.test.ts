@@ -69,7 +69,7 @@ function readOnlyStateFile(stateDir: string): Record<string, unknown> {
   >;
 }
 
-test("Pi plugin refreshes tmux clients after writing state", async () => {
+test("Pi plugin notifies integrations when tmux refresh fails", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "display-message" ]; then
@@ -78,7 +78,7 @@ if [ "$1" = "display-message" ]; then
 fi
 if [ "$1" = "refresh-client" ]; then
   printf '%s\n' "$*" >> __LOG_PATH__
-  exit 0
+  exit 1
 fi
 if [ "$1" = "show-option" ]; then
   printf 'integration-notify __LOG_PATH__\n'

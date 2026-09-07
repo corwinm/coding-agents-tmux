@@ -528,7 +528,7 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
   const client = options.client ? await resolveTmuxClient(options.client) : undefined;
   const tmuxArgs = [
     "display-popup",
-    ...(client ? ["-t", client] : []),
+    ...(client ? ["-c", client] : []),
     "-E",
     "-w",
     options.width ?? "100%",
@@ -744,6 +744,10 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export function buildStatusRefreshHookCommand(notificationScript: string): string {
+  return `run-shell -b ${tmuxDoubleQuote(shellEscape(notificationScript))}`;
+}
+
 export function buildTmuxSnippet(options: TmuxConfigOptions): string {
   const switchArgs: string[] = [];
   const waitingArgs: string[] = ["--waiting"];
@@ -775,7 +779,7 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
   const waitingMenuCommand = buildMenuScriptCommand(waitingArgs);
   const statusCommand = buildShellRunCommand(statusArgs);
   const notificationScript = join(REPO_ROOT, "scripts", "notify-status-change.sh");
-  const statusRefreshHookCommand = `run-shell -b ${tmuxDoubleQuote(notificationScript)}`;
+  const statusRefreshHookCommand = buildStatusRefreshHookCommand(notificationScript);
   const statusRefreshHookLines = STATUS_REFRESH_HOOKS.map(
     (hook, index) =>
       `set-hook -g ${hook}[${200 + index}] ${tmuxDoubleQuote(statusRefreshHookCommand)}`,

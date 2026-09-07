@@ -99,11 +99,7 @@ function resolveTmuxPaneTarget(paneId: string | null): string | null {
 }
 
 function refreshTmuxClients() {
-  const result = runTmuxCommand(["refresh-client", "-S"]);
-
-  if (result.status !== 0) {
-    return;
-  }
+  runTmuxCommand(["refresh-client", "-S"]);
 
   const configured = runTmuxCommand([
     "show-option",
