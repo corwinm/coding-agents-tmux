@@ -168,7 +168,7 @@ test("plugin notifies the configured integration after its debounced refresh", a
     "tmux",
     `if [ "$1" = "display-message" ]; then printf 'work:1.1\\n'; exit 0; fi\nif [ "$1" = "refresh-client" ]; then exit 0; fi\nif [ "$1" = "show-option" ]; then printf 'integration-notify %s\\n' '${logPath}'; exit 0; fi\nexit 1`,
   );
-  installExecutable(dir, "integration-notify", `printf 'changed\\n' > "$1"`);
+  installExecutable(dir, "integration-notify", `sleep 1\nprintf 'changed\\n' > "$1"`);
   const restoreEnv = setEnv({
     PATH: `${dir}:${process.env.PATH ?? ""}`,
     CODING_AGENTS_TMUX_STATE_DIR: stateDir,
@@ -183,8 +183,16 @@ test("plugin notifies the configured integration after its debounced refresh", a
       project: { name: "Project" },
       client: { app: { log: async () => null } },
     });
+    const startedAt = Date.now();
     await plugin.event({ event: { type: "session.idle", timeUpdated: 100 } });
     await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.ok(Date.now() - startedAt < 500, "notification blocked the plugin event loop");
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        if (readFileSync(logPath, "utf8") === "changed\n") break;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     assert.equal(readFileSync(logPath, "utf8"), "changed\n");
   } finally {
     restoreEnv();

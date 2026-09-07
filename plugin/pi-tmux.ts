@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 interface PiSessionManager {
   getSessionFile(): string | undefined;
@@ -77,6 +77,16 @@ function runTmuxCommand(args: string[]) {
   });
 }
 
+function dispatchNotification(command: string) {
+  const child = spawn(process.env.SHELL ?? "/bin/sh", ["-c", command], { stdio: "ignore" });
+  const timeout = setTimeout(() => child.kill(), 5_000);
+  const clear = () => clearTimeout(timeout);
+  timeout.unref();
+  child.once("error", clear);
+  child.once("exit", clear);
+  child.unref();
+}
+
 function resolveTmuxPaneTarget(paneId: string | null): string | null {
   if (!paneId) {
     return null;
@@ -112,7 +122,7 @@ function refreshTmuxClients() {
       : "";
 
   if (configured) {
-    spawnSync(process.env.SHELL ?? "/bin/sh", ["-c", configured], { stdio: "ignore" });
+    dispatchNotification(configured);
   }
 }
 

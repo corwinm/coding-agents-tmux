@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import test from "node:test";
 
 import { persistClaudeHookState } from "../src/core/claude.ts";
 import { persistCodexHookState } from "../src/core/codex.ts";
-import { notifyIntegration } from "../src/core/notifications.ts";
+import { dispatchNotificationCommand, notifyIntegration } from "../src/core/notifications.ts";
 
 function setEnv(updates: Record<string, string | undefined>): () => void {
   const previous = new Map<string, string | undefined>();
@@ -37,6 +38,18 @@ function installExecutable(dir: string, name: string, script: string): void {
   chmodSync(path, 0o755);
 }
 
+async function waitForFileContent(path: string, expected: string): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      if (readFileSync(path, "utf8") === expected) {
+        return;
+      }
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  assert.equal(readFileSync(path, "utf8"), expected);
+}
+
 test("notifyIntegration runs the configured tmux notification command", async () => {
   const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-notify-"));
   const logPath = join(dir, "notify.log");
@@ -50,10 +63,23 @@ test("notifyIntegration runs the configured tmux notification command", async ()
 
   try {
     await notifyIntegration();
-    assert.equal(readFileSync(logPath, "utf8"), "changed\n");
+    await waitForFileContent(logPath, "changed\n");
   } finally {
     restoreEnv();
   }
+});
+
+test("dispatchNotificationCommand returns immediately and bounds command lifetime", async () => {
+  const startedAt = Date.now();
+  const child = dispatchNotificationCommand("while :; do :; done", 50);
+
+  assert.ok(Date.now() - startedAt < 100);
+  await Promise.race([
+    once(child, "close"),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("notification did not stop")), 500),
+    ),
+  ]);
 });
 
 test("notifyIntegration is a no-op when tmux or a command is unavailable", async () => {
@@ -91,7 +117,7 @@ test("Codex and Claude state publishers notify configured integrations", async (
     await persistClaudeHookState(
       JSON.stringify({ hook_event_name: "Stop", cwd: "/tmp/claude", session_id: "claude-1" }),
     );
-    assert.equal(readFileSync(logPath, "utf8"), "changed\nchanged\n");
+    await waitForFileContent(logPath, "changed\nchanged\n");
   } finally {
     restoreEnv();
   }

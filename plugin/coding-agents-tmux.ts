@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -12,6 +12,16 @@ const STATE_DIR =
   );
 
 let tmuxRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+function dispatchNotification(command: string) {
+  const child = spawn(process.env.SHELL ?? "/bin/sh", ["-c", command], { stdio: "ignore" });
+  const timeout = setTimeout(() => child.kill(), 5_000);
+  const clear = () => clearTimeout(timeout);
+  timeout.unref();
+  child.once("error", clear);
+  child.once("exit", clear);
+  child.unref();
+}
 
 interface PluginLogClient {
   app: {
@@ -59,7 +69,7 @@ function scheduleTmuxStatusRefresh() {
         : "";
 
     if (configured) {
-      spawnSync(process.env.SHELL ?? "/bin/sh", ["-c", configured], { stdio: "ignore" });
+      dispatchNotification(configured);
     }
   }, 150);
 }

@@ -1055,7 +1055,12 @@ exit 1
   try {
     const result = await runCommand([BIN_PATH, "notify"]);
     assert.equal(result.exitCode, 0);
-    const log = readFileSync(fakeTmux.logPath, "utf8");
+    let log = "";
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      log = readFileSync(fakeTmux.logPath, "utf8");
+      if (log.includes("notified")) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
     assert.match(log, /refresh-client -S/);
     assert.match(log, /notified/);
   } finally {

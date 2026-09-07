@@ -88,7 +88,11 @@ printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
   const notifyPath = join(fakeTmux.pathEntry, "integration-notify");
-  writeFileSync(notifyPath, "#!/usr/bin/env bash\nprintf 'notified\\n' >> \"$1\"\n", "utf8");
+  writeFileSync(
+    notifyPath,
+    "#!/usr/bin/env bash\nsleep 1\nprintf 'notified\\n' >> \"$1\"\n",
+    "utf8",
+  );
   chmodSync(notifyPath, 0o755);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
@@ -118,10 +122,17 @@ exit 1
       },
     };
 
+    const startedAt = Date.now();
     await handler?.({}, ctx);
+    assert.ok(Date.now() - startedAt < 900, "Pi event handler waited for the integration command");
 
     const state = readOnlyStateFile(stateDir);
-    const log = readFileSync(fakeTmux.logPath, "utf8");
+    let log = "";
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      log = readFileSync(fakeTmux.logPath, "utf8");
+      if (log.includes("notified")) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
 
     assert.equal(state.target, "work:1.1");
     assert.equal(state.status, "running");
