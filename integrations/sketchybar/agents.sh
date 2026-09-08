@@ -2,6 +2,11 @@
 
 set -euo pipefail
 
+# SketchyBar's launchd service may not inherit a locale. tmux needs UTF-8 to
+# preserve the tab delimiters consumed by coding-agents-tmux.
+export LANG="${LANG:-en_US.UTF-8}"
+export LC_CTYPE="${LC_CTYPE:-en_US.UTF-8}"
+
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$CURRENT_DIR/../.." && pwd)"
 CLI="${CODING_AGENTS_TMUX_BIN:-$REPO_ROOT/bin/coding-agents-tmux}"

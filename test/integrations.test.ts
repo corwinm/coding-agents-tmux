@@ -33,7 +33,7 @@ test("SketchyBar integration renders the summary and configured tone color", asy
   const log = join(dir, "sketchybar.log");
   executable(
     cli,
-    `printf '%s' '{"mode":"summary","total":2,"busy":1,"waiting":1,"running":0,"idle":1,"new":0,"unknown":0,"tone":"waiting","summary":"agents | waiting idle"}'`,
+    `printf 'locale %s %s\\n' "\${LANG:-}" "\${LC_CTYPE:-}" > '${join(dir, "locale.log")}'\nprintf '%s' '{"mode":"summary","total":2,"busy":1,"waiting":1,"running":0,"idle":1,"new":0,"unknown":0,"tone":"waiting","summary":"agents | waiting idle"}'`,
   );
   executable(sketchybar, `printf '%s\\n' "$*" > '${log}'`);
   const restoreEnv = setEnv({
@@ -41,6 +41,9 @@ test("SketchyBar integration renders the summary and configured tone color", asy
     SKETCHYBAR_BIN: sketchybar,
     NAME: "agents",
     CODING_AGENTS_TMUX_COLOR_WAITING: "0xffff0000",
+    LANG: undefined,
+    LC_ALL: undefined,
+    LC_CTYPE: undefined,
   });
 
   try {
@@ -50,6 +53,7 @@ test("SketchyBar integration renders the summary and configured tone color", asy
     assert.match(rendered, /--set agents/);
     assert.match(rendered, /label=agents \| waiting idle/);
     assert.match(rendered, /label.color=0xffff0000/);
+    assert.equal(readFileSync(join(dir, "locale.log"), "utf8"), "locale en_US.UTF-8 en_US.UTF-8\n");
   } finally {
     restoreEnv();
   }
