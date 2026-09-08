@@ -12,8 +12,9 @@ For AeroSpace, terminal choice and workspace assignment remain user configuratio
 
 ```sh
 #!/bin/sh
+plugin_dir="${TMUX_PLUGIN_MANAGER_PATH:-$HOME/.tmux/plugins}/coding-agents-tmux"
 export CODING_AGENTS_TMUX_FOCUS_COMMAND='aerospace workspace T'
-exec /path/to/coding-agents-tmux/integrations/external/focus-and-popup.sh "$@"
+exec "$plugin_dir/integrations/external/focus-and-popup.sh" "$@"
 ```
 
 Then bind that wrapper in AeroSpace:

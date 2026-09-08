@@ -281,15 +281,15 @@ Bundled examples:
 - [`integrations/sketchybar`](integrations/sketchybar) renders the global agent summary in SketchyBar without polling
 - [`integrations/external`](integrations/external) focuses a configured terminal and launches the full popup or compact menu from AeroSpace, Raycast, Hammerspoon, or another external launcher
 
-To open a chooser outside tmux, target an attached client explicitly or let the CLI select the most recently active one:
+When TPM installs the plugin in its default directory, launch either chooser with the bundled external script:
 
 ```bash
-./bin/coding-agents-tmux popup --client auto
-./bin/coding-agents-tmux popup --client /dev/ttys000 --waiting
-./bin/coding-agents-tmux menu --client auto
+~/.tmux/plugins/coding-agents-tmux/integrations/external/focus-and-popup.sh
+~/.tmux/plugins/coding-agents-tmux/integrations/external/focus-and-popup.sh --waiting
+~/.tmux/plugins/coding-agents-tmux/integrations/external/focus-and-popup.sh --menu
 ```
 
-The same `--client` option is available on `menu` and `switch`. This only targets tmux; terminal placement and native focus remain the responsibility of the external window manager or launcher.
+The script selects the most recently active attached tmux client by default. Set `CODING_AGENTS_TMUX_CLIENT` to target one explicitly. Terminal placement and native focus remain the responsibility of the external window manager or launcher.
 
 ## Configuration
 
