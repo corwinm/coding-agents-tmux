@@ -26,6 +26,19 @@ function executable(path: string, body: string): void {
   chmodSync(path, 0o755);
 }
 
+test("integration examples use TPM-installed plugin paths", () => {
+  const rootReadme = readFileSync(join(process.cwd(), "README.md"), "utf8");
+  const sketchybarExample = readFileSync(
+    join(process.cwd(), "integrations/sketchybar/sketchybarrc.example"),
+    "utf8",
+  );
+
+  assert.doesNotMatch(rootReadme, /\.\/bin\/coding-agents-tmux/);
+  assert.match(sketchybarExample, /TMUX_PLUGIN_MANAGER_PATH/);
+  assert.match(sketchybarExample, /\$HOME\/\.tmux\/plugins/);
+  assert.doesNotMatch(sketchybarExample, /\/path\/to\/coding-agents-tmux/);
+});
+
 test("SketchyBar integration renders the summary and configured tone color", async () => {
   const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-sketchybar-"));
   const cli = join(dir, "coding-agents-tmux");

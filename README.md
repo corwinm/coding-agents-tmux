@@ -263,7 +263,7 @@ set -ag status-right " #[fg=colour81]agents #[default]#{@coding-agents-tmux-stat
 The CLI exposes the same state used by the tmux segment as a stable machine-readable summary:
 
 ```bash
-./bin/coding-agents-tmux status --summary --json
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux status --summary --json
 ```
 
 The JSON includes totals by state, the aggregate tone, and the rendered summary. External status bars and widgets can query it without duplicating agent detection.
@@ -385,14 +385,14 @@ To enable higher-fidelity Codex state with Codex hooks:
 1. Let the tmux plugin install the global Codex config automatically, or run it manually:
 
 ```bash
-./bin/coding-agents-tmux install-codex
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux install-codex
 ```
 
 2. Optionally generate an additional repo-local hooks file:
 
 ```bash
 mkdir -p .codex
-./bin/coding-agents-tmux codex-hooks-template > .codex/hooks.json
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux codex-hooks-template > .codex/hooks.json
 ```
 
 3. Restart `codex` sessions in tmux so they begin publishing hook-backed state.
@@ -413,7 +413,7 @@ To enable higher-fidelity Claude Code state with hooks:
 1. Install or update the global Claude hook config manually:
 
 ```bash
-./bin/coding-agents-tmux install-claude
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux install-claude
 ```
 
 2. Or let the tmux plugin manage it by setting either:
@@ -431,7 +431,7 @@ set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude'
 3. Optionally inspect the managed hook template before merging it into project or user Claude settings:
 
 ```bash
-./bin/coding-agents-tmux claude-hooks-template
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux claude-hooks-template
 ```
 
 4. Restart `claude` sessions in tmux so they begin publishing hook-backed state.
@@ -519,15 +519,16 @@ The repository also includes a CLI for debugging and manual inspection.
 Useful commands:
 
 ```bash
-./bin/coding-agents-tmux list --provider plugin
-./bin/coding-agents-tmux list --agent codex
-./bin/coding-agents-tmux list --agent pi
-./bin/coding-agents-tmux list --agent claude
-./bin/coding-agents-tmux list --agent kiro
-./bin/coding-agents-tmux list --provider plugin --waiting
-./bin/coding-agents-tmux inspect <target> --provider plugin
-./bin/coding-agents-tmux status --provider plugin --style tmux
-./bin/coding-agents-tmux status --summary --json
-./bin/coding-agents-tmux popup --client auto
-./bin/coding-agents-tmux tmux-config --provider plugin
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --provider plugin
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent codex
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent pi
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent claude
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent kiro
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --provider plugin --waiting
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux inspect <target> --provider plugin
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux status --provider plugin --style tmux
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux status --summary --json
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux popup --client auto
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux menu --client auto
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux tmux-config --provider plugin
 ```

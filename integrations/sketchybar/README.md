@@ -4,7 +4,7 @@ This integration renders the global coding-agent summary in SketchyBar. It can r
 
 ## Configure
 
-Copy or source the relevant lines from `sketchybarrc.example`, replacing `/path/to/coding-agents-tmux` with this plugin's absolute path.
+Copy or source the relevant lines from `sketchybarrc.example`. It uses TPM's default install path and honors `TMUX_PLUGIN_MANAGER_PATH` when set.
 
 Then configure the generic notification command in `~/.tmux.conf`:
 
