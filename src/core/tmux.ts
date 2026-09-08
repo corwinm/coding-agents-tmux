@@ -26,6 +26,11 @@ export interface WindowPreviewSnapshot {
   width: number;
 }
 
+export interface TmuxClient {
+  activity: number;
+  name: string;
+}
+
 const TMUX_FIELDS = [
   "#{session_name}",
   "#{window_index}",
@@ -539,12 +544,17 @@ export async function captureWindowPreview(target: PaneTarget): Promise<WindowPr
   };
 }
 
-export function buildSwitchToPaneCommand(pane: TmuxPane, insideTmux: boolean): string[] {
+export function buildSwitchToPaneCommand(
+  pane: TmuxPane,
+  insideTmux: boolean,
+  client?: string,
+): string[] {
   const windowTarget = `${pane.sessionName}:${pane.windowIndex}`;
   return insideTmux
     ? [
         "tmux",
         "switch-client",
+        ...(client ? ["-c", client] : []),
         "-t",
         pane.sessionName,
         ";",
@@ -572,15 +582,65 @@ export function buildSwitchToPaneCommand(pane: TmuxPane, insideTmux: boolean): s
       ];
 }
 
-export async function switchToPane(pane: TmuxPane): Promise<void> {
+export function chooseTmuxClient(clients: TmuxClient[], requested: string): string {
+  if (clients.length === 0) {
+    throw new Error("No attached tmux clients were found");
+  }
+
+  if (requested !== "auto") {
+    if (!clients.some((client) => client.name === requested)) {
+      throw new Error(`No attached tmux client matches ${requested}`);
+    }
+
+    return requested;
+  }
+
+  return [...clients].sort(
+    (left, right) => right.activity - left.activity || left.name.localeCompare(right.name),
+  )[0]!.name;
+}
+
+export async function listTmuxClients(): Promise<TmuxClient[]> {
+  const { stdoutText, stderrText, exitCode } = await runCommand([
+    "tmux",
+    "list-clients",
+    "-F",
+    "#{client_name}\t#{client_activity}",
+  ]);
+
+  if (exitCode !== 0) {
+    throw new Error(stderrText.trim() || "tmux list-clients failed");
+  }
+
+  return stdoutText
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const [name, activity] = line.split("\t");
+
+      if (!name || activity === undefined || !Number.isFinite(Number(activity))) {
+        throw new Error(`Unexpected tmux client output: ${line}`);
+      }
+
+      return { name, activity: Number(activity) };
+    });
+}
+
+export async function resolveTmuxClient(requested: string): Promise<string> {
+  return chooseTmuxClient(await listTmuxClients(), requested);
+}
+
+export async function switchToPane(pane: TmuxPane, client?: string): Promise<void> {
   const insideTmux = Boolean(process.env.TMUX);
-  let result = await runCommand(buildSwitchToPaneCommand(pane, insideTmux));
+  let result = await runCommand(
+    buildSwitchToPaneCommand(pane, insideTmux || Boolean(client), client),
+  );
 
   if (result.exitCode === 0) {
     return;
   }
 
-  if (insideTmux && isNoCurrentClientMessage(result.stderrText)) {
+  if (insideTmux && !client && isNoCurrentClientMessage(result.stderrText)) {
     result = await runCommand(buildSwitchToPaneCommand(pane, false));
 
     if (result.exitCode === 0) {

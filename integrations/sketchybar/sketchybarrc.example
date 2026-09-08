@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+PLUGIN_ROOT="${TMUX_PLUGIN_MANAGER_PATH:-$HOME/.tmux/plugins}/coding-agents-tmux"
+
+sketchybar --add event coding_agents_changed \
+  --add item coding-agents right \
+  --set coding-agents \
+  script="$PLUGIN_ROOT/integrations/sketchybar/agents.sh" \
+  click_script="CODING_AGENTS_TMUX_FOCUS_COMMAND='aerospace workspace T' '$PLUGIN_ROOT/integrations/external/focus-and-popup.sh'" \
+  --subscribe coding-agents coding_agents_changed
+
+NAME=coding-agents "$PLUGIN_ROOT/integrations/sketchybar/agents.sh"

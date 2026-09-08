@@ -22,7 +22,7 @@
     "dev": "./bin/coding-agents-tmux",
     "lint": "oxlint --deny-warnings .",
     "lint:fix": "oxlint --fix --deny-warnings .",
-    "shell:check": "shellcheck --shell=bash bin/* scripts/*.sh",
+    "shell:check": "shellcheck --shell=bash bin/* scripts/*.sh integrations/*/*.sh",
     "shell:fmt": "node ./scripts/shfmt.mjs --write",
     "shell:fmt:check": "node ./scripts/shfmt.mjs --check",
     "test": "node --test",

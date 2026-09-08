@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -40,6 +40,12 @@ function readOnlyStateFile(stateDir: string): Record<string, unknown> {
 
 async function loadPlugin() {
   return import(`../plugin/coding-agents-tmux.ts?test=${Math.random()}`);
+}
+
+function installExecutable(dir: string, name: string, script: string): void {
+  const path = join(dir, name);
+  writeFileSync(path, `#!/usr/bin/env bash\nset -euo pipefail\n${script}\n`, "utf8");
+  chmodSync(path, 0o755);
 }
 
 test("plugin preserves waiting state for ambiguous session.status heartbeats", async () => {
@@ -121,6 +127,73 @@ test("plugin switches back to running when session.status explicitly reports bus
     assert.equal(state.status, "running");
     assert.equal(state.activity, "busy");
     assert.equal(state.detail, "session.status running event");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin tolerates tmux disappearing before its debounced refresh", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
+  const emptyPath = mkdtempSync(join(tmpdir(), "coding-agents-tmux-no-tmux-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: stateDir,
+    PATH: emptyPath,
+    TMUX: "/tmp/tmux-test/default,1,0",
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    const { CodingAgentsTmuxPlugin } = await loadPlugin();
+    const plugin = await CodingAgentsTmuxPlugin({
+      directory: "/tmp/project",
+      project: { name: "Project" },
+      client: { app: { log: async () => null } },
+    });
+
+    await plugin.event({ event: { type: "session.idle", timeUpdated: 100 } });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    assert.equal(readOnlyStateFile(stateDir).status, "idle");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin notifies the configured integration after its debounced refresh", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-notify-"));
+  const stateDir = join(dir, "state");
+  const logPath = join(dir, "notify.log");
+  installExecutable(
+    dir,
+    "tmux",
+    `if [ "$1" = "display-message" ]; then printf 'work:1.1\\n'; exit 0; fi\nif [ "$1" = "refresh-client" ]; then exit 0; fi\nif [ "$1" = "show-option" ]; then printf 'integration-notify %s\\n' '${logPath}'; exit 0; fi\nexit 1`,
+  );
+  installExecutable(dir, "integration-notify", `sleep 1\nprintf 'changed\\n' > "$1"`);
+  const restoreEnv = setEnv({
+    PATH: `${dir}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_STATE_DIR: stateDir,
+    TMUX: "1",
+    TMUX_PANE: "%42",
+  });
+
+  try {
+    const { CodingAgentsTmuxPlugin } = await loadPlugin();
+    const plugin = await CodingAgentsTmuxPlugin({
+      directory: "/tmp/project",
+      project: { name: "Project" },
+      client: { app: { log: async () => null } },
+    });
+    const startedAt = Date.now();
+    await plugin.event({ event: { type: "session.idle", timeUpdated: 100 } });
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    assert.ok(Date.now() - startedAt < 500, "notification blocked the plugin event loop");
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        if (readFileSync(logPath, "utf8") === "changed\n") break;
+      } catch {}
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.equal(readFileSync(logPath, "utf8"), "changed\n");
   } finally {
     restoreEnv();
   }

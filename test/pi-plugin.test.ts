@@ -69,7 +69,7 @@ function readOnlyStateFile(stateDir: string): Record<string, unknown> {
   >;
 }
 
-test("Pi plugin refreshes tmux clients after writing state", async () => {
+test("Pi plugin notifies integrations when tmux refresh fails", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "display-message" ]; then
@@ -78,11 +78,22 @@ if [ "$1" = "display-message" ]; then
 fi
 if [ "$1" = "refresh-client" ]; then
   printf '%s\n' "$*" >> __LOG_PATH__
+  exit 1
+fi
+if [ "$1" = "show-option" ]; then
+  printf 'integration-notify __LOG_PATH__\n'
   exit 0
 fi
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
+  const notifyPath = join(fakeTmux.pathEntry, "integration-notify");
+  writeFileSync(
+    notifyPath,
+    "#!/usr/bin/env bash\nsleep 1\nprintf 'notified\\n' >> \"$1\"\n",
+    "utf8",
+  );
+  chmodSync(notifyPath, 0o755);
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
     CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
@@ -111,14 +122,22 @@ exit 1
       },
     };
 
+    const startedAt = Date.now();
     await handler?.({}, ctx);
+    assert.ok(Date.now() - startedAt < 900, "Pi event handler waited for the integration command");
 
     const state = readOnlyStateFile(stateDir);
-    const log = readFileSync(fakeTmux.logPath, "utf8");
+    let log = "";
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      log = readFileSync(fakeTmux.logPath, "utf8");
+      if (log.includes("notified")) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
 
     assert.equal(state.target, "work:1.1");
     assert.equal(state.status, "running");
     assert.match(log, /refresh-client -S/);
+    assert.match(log, /notified/);
   } finally {
     restoreEnv();
   }
@@ -126,8 +145,10 @@ exit 1
 
 test("Pi plugin supports CODING_AGENTS_TMUX_PI_STATE_DIR as a state dir override", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
+  const emptyPath = mkdtempSync(join(tmpdir(), "coding-agents-tmux-no-tmux-"));
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
+    PATH: emptyPath,
     TMUX_PANE: undefined,
   });
 

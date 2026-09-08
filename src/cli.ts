@@ -26,12 +26,14 @@ import {
   installCodexIntegration,
   persistCodexHookState,
 } from "./core/codex.ts";
+import { notifyIntegration } from "./core/notifications.ts";
 import { buildInspectDebugInfo, buildServerMapTemplate } from "./core/opencode.ts";
 import { attachRuntimeToPanes, getRuntimeProviderHelpText } from "./core/runtime.ts";
 import {
   discoverAgentPanes,
   findDiscoveredPaneByTarget,
   getCurrentTmuxTarget,
+  resolveTmuxClient,
   switchToPane,
 } from "./core/tmux.ts";
 import { PRIMARY_CLI_NAME } from "./naming.ts";
@@ -42,6 +44,7 @@ import type {
   PaneRuntimeSummary,
   PaneTarget,
   RuntimeProviderOptions,
+  RuntimeStatus,
 } from "./types.ts";
 
 interface ListOptions extends PaneFilterOptions, RuntimeProviderOptions {
@@ -58,7 +61,9 @@ interface InspectOptions extends RuntimeProviderOptions {
   watch?: boolean;
 }
 
-interface SwitchOptions extends PaneFilterOptions, RuntimeProviderOptions {}
+interface SwitchOptions extends PaneFilterOptions, RuntimeProviderOptions {
+  client?: string;
+}
 
 interface ServerMapTemplateOptions {
   basePort?: string;
@@ -73,6 +78,8 @@ interface PopupOptions extends SwitchOptions {
 }
 
 interface PopupUiOptions extends SwitchOptions {}
+
+interface MenuOptions extends SwitchOptions {}
 
 interface StatusOptions extends RuntimeProviderOptions {
   json?: boolean;
@@ -168,7 +175,6 @@ const STATUS_REFRESH_HOOKS = [
   "window-linked",
   "window-unlinked",
 ] as const;
-const STATUS_REFRESH_HOOK_COMMAND = "run-shell -b 'tmux refresh-client -S >/dev/null 2>&1 || true'";
 
 async function loadPaneRuntimeSummaries(options: RuntimeProviderOptions = {}) {
   const panes = await discoverAgentPanes();
@@ -461,8 +467,9 @@ async function runSwitchFilteredCommand(
   }
 
   const pane = target ? requirePaneByTarget(panes, target) : await promptForPaneSelection(panes);
+  const client = options.client ? await resolveTmuxClient(options.client) : undefined;
 
-  await switchToPane(pane.pane);
+  await switchToPane(pane.pane, client);
 }
 
 async function runPopupUiCommand(options: PopupUiOptions): Promise<void> {
@@ -474,7 +481,7 @@ async function runPopupUiCommand(options: PopupUiOptions): Promise<void> {
     process.exit(0);
   }
 
-  await switchToPane(pane.pane);
+  await switchToPane(pane.pane, options.client);
   process.exit(0);
 }
 
@@ -509,19 +516,26 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
     switchArgs.push("--running");
   }
 
-  const popupCommand = buildSelfCommand(switchArgs);
-
   if (options.printCommand) {
-    console.log(popupCommand);
+    if (options.client) {
+      switchArgs.push("--client", options.client);
+    }
+    console.log(buildSelfCommand(switchArgs));
     return;
   }
 
-  if (!process.env.TMUX) {
-    throw new Error("Popup mode requires running inside tmux");
+  if (!process.env.TMUX && !options.client) {
+    throw new Error("Popup mode requires running inside tmux or passing --client");
   }
 
+  const client = options.client ? await resolveTmuxClient(options.client) : undefined;
+  if (client) {
+    switchArgs.push("--client", client);
+  }
+  const popupCommand = buildSelfCommand(switchArgs);
   const tmuxArgs = [
     "display-popup",
+    ...(client ? ["-c", client] : []),
     "-E",
     "-w",
     options.width ?? "100%",
@@ -533,6 +547,31 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
   ];
 
   await runTmuxCommand(tmuxArgs);
+}
+
+async function runMenuCommand(options: MenuOptions): Promise<void> {
+  const menuArgs: string[] = [];
+
+  if (options.provider) menuArgs.push("--provider", options.provider);
+  if (options.agent) menuArgs.push("--agent", options.agent);
+  if (options.serverMap) menuArgs.push("--server-map", options.serverMap);
+  if (options.active) menuArgs.push("--active");
+  if (options.waiting) menuArgs.push("--waiting");
+  if (options.busy) menuArgs.push("--busy");
+  if (options.running) menuArgs.push("--running");
+
+  if (!process.env.TMUX && !options.client) {
+    throw new Error("Menu mode requires running inside tmux or passing --client");
+  }
+
+  const client = options.client ? await resolveTmuxClient(options.client) : undefined;
+  if (client) menuArgs.push("--client", client);
+
+  const scriptPath = join(REPO_ROOT, "scripts", "tmux-menu-switch.sh");
+  const result = await runCommand([scriptPath, ...menuArgs]);
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderrText.trim() || "tmux menu failed");
+  }
 }
 
 async function runServerMapTemplateCommand(options: ServerMapTemplateOptions): Promise<void> {
@@ -620,12 +659,29 @@ export function buildStatusOutput(
     }
 
     if (options.json) {
+      const countStatus = (status: RuntimeStatus) =>
+        panes.filter((entry) => entry.runtime.status === status).length;
       const busy = panes.filter((entry) => entry.runtime.activity === "busy").length;
       const waiting = panes.filter(
         (entry) =>
           entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input",
       ).length;
-      return JSON.stringify({ mode: "summary", total: panes.length, busy, waiting }, null, 2);
+      return JSON.stringify(
+        {
+          mode: "summary",
+          total: panes.length,
+          busy,
+          waiting,
+          running: countStatus("running"),
+          idle: countStatus("idle"),
+          new: countStatus("new"),
+          unknown: countStatus("unknown"),
+          tone: renderStatusTone(null, panes),
+          summary: renderStatusSummary(null, panes, renderOptions),
+        },
+        null,
+        2,
+      );
     }
 
     return renderStatusSummary(null, panes, renderOptions);
@@ -693,6 +749,10 @@ async function runStatusCommand(options: StatusOptions): Promise<void> {
   );
 }
 
+async function runNotifyCommand(): Promise<void> {
+  await notifyIntegration();
+}
+
 export function getPopupFilterArgs(filter: TmuxConfigOptions["popupFilter"]): string[] {
   switch (filter) {
     case "busy":
@@ -714,6 +774,10 @@ async function runTmuxConfigCommand(options: TmuxConfigOptions): Promise<void> {
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export function buildStatusRefreshHookCommand(notificationScript: string): string {
+  return `run-shell -b ${tmuxDoubleQuote(shellEscape(notificationScript))}`;
 }
 
 export function buildTmuxSnippet(options: TmuxConfigOptions): string {
@@ -746,9 +810,11 @@ export function buildTmuxSnippet(options: TmuxConfigOptions): string {
   const menuCommand = buildMenuScriptCommand(switchArgs);
   const waitingMenuCommand = buildMenuScriptCommand(waitingArgs);
   const statusCommand = buildShellRunCommand(statusArgs);
+  const notificationScript = join(REPO_ROOT, "scripts", "notify-status-change.sh");
+  const statusRefreshHookCommand = buildStatusRefreshHookCommand(notificationScript);
   const statusRefreshHookLines = STATUS_REFRESH_HOOKS.map(
     (hook, index) =>
-      `set-hook -g ${hook}[${200 + index}] ${tmuxDoubleQuote(STATUS_REFRESH_HOOK_COMMAND)}`,
+      `set-hook -g ${hook}[${200 + index}] ${tmuxDoubleQuote(statusRefreshHookCommand)}`,
   );
   const menuKey = options.menuKey ?? "O";
   const popupKey = options.popupKey ?? "P";
@@ -876,6 +942,7 @@ async function main(): Promise<void> {
       "Only allow panes that are running or waiting for user response as candidates",
     )
     .option("--running", "Only allow panes with runtime status 'running' as candidates")
+    .option("--client <client>", "Target an attached tmux client by name, or use auto")
     .action(runSwitchFilteredCommand);
 
   program
@@ -936,6 +1003,7 @@ async function main(): Promise<void> {
     .option("--height <value>", "Popup height", "100%")
     .option("--title <value>", "Popup title", "Coding Agent Sessions")
     .option("--print-command", "Print the popup's inner switch command instead of opening tmux")
+    .option("--client <client>", "Target an attached tmux client by name, or use auto")
     .action(runPopupCommand);
 
   program
@@ -955,7 +1023,24 @@ async function main(): Promise<void> {
     .option("--waiting", "Only include panes waiting for question or freeform input")
     .option("--busy", "Only include panes that are running or waiting for user response")
     .option("--running", "Only include panes with runtime status 'running'")
+    .option("--client <client>", "Target the tmux client that opened this popup")
     .action(runPopupUiCommand);
+
+  program
+    .command("menu")
+    .description("Open the compact tmux menu for switching between discovered coding agent panes")
+    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option("--provider <provider>", "Runtime provider: auto, plugin, sqlite, or server", "plugin")
+    .option(
+      "--server-map <value>",
+      "JSON object or file path mapping pane targets to server endpoints",
+    )
+    .option("--active", "Only include active tmux panes")
+    .option("--waiting", "Only include panes waiting for question or freeform input")
+    .option("--busy", "Only include panes that are running or waiting for user response")
+    .option("--running", "Only include panes with runtime status 'running'")
+    .option("--client <client>", "Target an attached tmux client by name, or use auto")
+    .action(runMenuCommand);
 
   program
     .command("status")
@@ -978,6 +1063,11 @@ async function main(): Promise<void> {
       "JSON object or file path mapping pane targets to server endpoints",
     )
     .action(runStatusCommand);
+
+  program
+    .command("notify")
+    .description("Refresh tmux status and invoke the configured integration notification command")
+    .action(runNotifyCommand);
 
   program
     .command("tmux-config")

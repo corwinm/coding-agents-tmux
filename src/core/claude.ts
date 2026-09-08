@@ -9,6 +9,7 @@ import {
 import { homedir } from "node:os";
 import { basename, join } from "node:path";
 
+import { notifyIntegration } from "./notifications.ts";
 import { capturePanePreview } from "./tmux.ts";
 import { getPreferredStateDir, getStateDirCandidates } from "../naming.ts";
 import { runCommand } from "../runtime.ts";
@@ -378,6 +379,7 @@ export async function persistClaudeHookState(rawInput: string): Promise<void> {
     }
 
     unlinkSync(filePath);
+    await notifyIntegration();
     return;
   }
 
@@ -402,6 +404,7 @@ export async function persistClaudeHookState(rawInput: string): Promise<void> {
 
   mkdirSync(stateDir, { recursive: true });
   writeFileSync(filePath, JSON.stringify(nextState, null, 2), "utf8");
+  await notifyIntegration();
 }
 
 export function readClaudeStates(): ClaudeStateFile[] {
