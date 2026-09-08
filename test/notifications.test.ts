@@ -39,7 +39,9 @@ function installExecutable(dir: string, name: string, script: string): void {
 }
 
 async function waitForFileContent(path: string, expected: string): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+  // Notification commands are intentionally detached and may compete with the
+  // parallel test suite. Allow them the same bounded window as production.
+  for (let attempt = 0; attempt < 250; attempt += 1) {
     try {
       if (readFileSync(path, "utf8") === expected) {
         return;

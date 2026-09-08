@@ -79,10 +79,16 @@ test("external launcher focuses the terminal before targeting the tmux popup", a
   const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-launcher-"));
   const cli = join(dir, "coding-agents-tmux");
   const log = join(dir, "launcher.log");
-  executable(cli, `printf 'popup %s\\n' "$*" >> '${log}'`);
+  executable(
+    cli,
+    `printf 'locale %s %s\\n' "\${LANG:-}" "\${LC_CTYPE:-}" >> '${log}'\nprintf 'popup %s\\n' "$*" >> '${log}'`,
+  );
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_BIN: cli,
     CODING_AGENTS_TMUX_FOCUS_COMMAND: `printf 'focus\\n' >> '${log}'`,
+    LANG: undefined,
+    LC_ALL: undefined,
+    LC_CTYPE: undefined,
   });
 
   try {
@@ -91,7 +97,10 @@ test("external launcher focuses the terminal before targeting the tmux popup", a
       "--waiting",
     ]);
     assert.equal(result.exitCode, 0);
-    assert.equal(readFileSync(log, "utf8"), "focus\npopup popup --client auto --waiting\n");
+    assert.equal(
+      readFileSync(log, "utf8"),
+      "focus\nlocale en_US.UTF-8 en_US.UTF-8\npopup popup --client auto --waiting\n",
+    );
   } finally {
     restoreEnv();
   }
