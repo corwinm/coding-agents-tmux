@@ -63,18 +63,40 @@ status_symbol() {
   esac
 }
 
-ARGS=("$@")
-LIST_ARGS=(list --compact)
-SWITCH_ARGS=(switch)
+FILTER_ARGS=()
+CLIENT_ARGS=()
+CLIENT=""
 waiting_only="off"
 
-for arg in "${ARGS[@]}"; do
-  LIST_ARGS+=("$arg")
-  SWITCH_ARGS+=("$arg")
+while [ "$#" -gt 0 ]; do
+  arg="$1"
+  if [ "$arg" = "--client" ]; then
+    if [ "$#" -lt 2 ]; then
+      printf 'coding-agents-tmux: --client requires a value\n' >&2
+      exit 1
+    fi
+    CLIENT="$2"
+    CLIENT_ARGS=(--client "$CLIENT")
+    shift 2
+    continue
+  fi
+
+  FILTER_ARGS+=("$arg")
   if [ "$arg" = "--waiting" ]; then
     waiting_only="on"
   fi
+  shift
 done
+
+LIST_ARGS=(list --compact)
+SWITCH_ARGS=(switch)
+if [ "${#FILTER_ARGS[@]}" -gt 0 ]; then
+  LIST_ARGS+=("${FILTER_ARGS[@]}")
+  SWITCH_ARGS+=("${FILTER_ARGS[@]}")
+fi
+if [ "${#CLIENT_ARGS[@]}" -gt 0 ]; then
+  SWITCH_ARGS+=("${CLIENT_ARGS[@]}")
+fi
 
 LINES=()
 while IFS= read -r line; do
@@ -88,11 +110,15 @@ fi
 
 if [ "$waiting_only" = "on" ] && [ "${#LINES[@]}" -eq 1 ]; then
   IFS=$'\t' read -r target _ <<<"${LINES[0]}"
-  "$CLI" switch "${ARGS[@]}" "$target"
+  "$CLI" "${SWITCH_ARGS[@]}" "$target"
   exit 0
 fi
 
-MENU_CMD=(tmux display-menu -T "Coding Agent Sessions" -x C -y C)
+MENU_CMD=(tmux display-menu)
+if [ -n "$CLIENT" ]; then
+  MENU_CMD+=(-c "$CLIENT")
+fi
+MENU_CMD+=(-T "Coding Agent Sessions" -x C -y C)
 
 target_width=0
 session_width=0
@@ -137,8 +163,8 @@ for line in "${LINES[@]}"; do
     key="$INDEX"
   fi
 
-  switch_command="cd $(shell_escape "$CURRENT_DIR") && $(shell_escape "$CLI") switch"
-  for arg in "${ARGS[@]}"; do
+  switch_command="cd $(shell_escape "$CURRENT_DIR") && $(shell_escape "$CLI")"
+  for arg in "${SWITCH_ARGS[@]}"; do
     switch_command="$switch_command $(shell_escape "$arg")"
   done
   switch_command="$switch_command $(shell_escape "$target")"

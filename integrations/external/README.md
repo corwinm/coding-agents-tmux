@@ -1,6 +1,6 @@
 # External launchers
 
-`focus-and-popup.sh` lets window managers, status bars, launchers, and automation tools open the existing chooser in an attached tmux client.
+`focus-and-popup.sh` lets window managers, status bars, launchers, and automation tools open a chooser in an attached tmux client. It opens the full popup by default; pass `--menu` for the compact native tmux menu.
 
 It accepts the popup filters, including `--waiting`, and supports:
 
@@ -22,6 +22,7 @@ Then bind that wrapper in AeroSpace:
 [mode.main.binding]
 alt-o = 'exec-and-forget /path/to/user-wrapper'
 alt-w = 'exec-and-forget /path/to/user-wrapper --waiting'
+alt-m = 'exec-and-forget /path/to/user-wrapper --menu'
 ```
 
 The generic launcher only runs the configured focus command, identifies the most recently active attached tmux client, and opens the chooser there. It supplies a UTF-8 locale when macOS launches it without locale variables so tmux preserves the CLI's field delimiters.

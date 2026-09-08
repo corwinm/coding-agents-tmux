@@ -79,6 +79,8 @@ interface PopupOptions extends SwitchOptions {
 
 interface PopupUiOptions extends SwitchOptions {}
 
+interface MenuOptions extends SwitchOptions {}
+
 interface StatusOptions extends RuntimeProviderOptions {
   json?: boolean;
   summary?: boolean;
@@ -547,6 +549,31 @@ async function runPopupCommand(options: PopupOptions): Promise<void> {
   await runTmuxCommand(tmuxArgs);
 }
 
+async function runMenuCommand(options: MenuOptions): Promise<void> {
+  const menuArgs: string[] = [];
+
+  if (options.provider) menuArgs.push("--provider", options.provider);
+  if (options.agent) menuArgs.push("--agent", options.agent);
+  if (options.serverMap) menuArgs.push("--server-map", options.serverMap);
+  if (options.active) menuArgs.push("--active");
+  if (options.waiting) menuArgs.push("--waiting");
+  if (options.busy) menuArgs.push("--busy");
+  if (options.running) menuArgs.push("--running");
+
+  if (!process.env.TMUX && !options.client) {
+    throw new Error("Menu mode requires running inside tmux or passing --client");
+  }
+
+  const client = options.client ? await resolveTmuxClient(options.client) : undefined;
+  if (client) menuArgs.push("--client", client);
+
+  const scriptPath = join(REPO_ROOT, "scripts", "tmux-menu-switch.sh");
+  const result = await runCommand([scriptPath, ...menuArgs]);
+  if (result.exitCode !== 0) {
+    throw new Error(result.stderrText.trim() || "tmux menu failed");
+  }
+}
+
 async function runServerMapTemplateCommand(options: ServerMapTemplateOptions): Promise<void> {
   const panes = await discoverAgentPanes();
   const basePort = parsePort(options.basePort, "base port");
@@ -998,6 +1025,22 @@ async function main(): Promise<void> {
     .option("--running", "Only include panes with runtime status 'running'")
     .option("--client <client>", "Target the tmux client that opened this popup")
     .action(runPopupUiCommand);
+
+  program
+    .command("menu")
+    .description("Open the compact tmux menu for switching between discovered coding agent panes")
+    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option("--provider <provider>", "Runtime provider: auto, plugin, sqlite, or server", "plugin")
+    .option(
+      "--server-map <value>",
+      "JSON object or file path mapping pane targets to server endpoints",
+    )
+    .option("--active", "Only include active tmux panes")
+    .option("--waiting", "Only include panes waiting for question or freeform input")
+    .option("--busy", "Only include panes that are running or waiting for user response")
+    .option("--running", "Only include panes with runtime status 'running'")
+    .option("--client <client>", "Target an attached tmux client by name, or use auto")
+    .action(runMenuCommand);
 
   program
     .command("status")

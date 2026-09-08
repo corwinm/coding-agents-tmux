@@ -109,3 +109,42 @@ test("external launcher focuses the terminal before targeting the tmux popup", a
     restoreEnv();
   }
 });
+
+test("external launcher can open the compact tmux menu", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-launcher-menu-"));
+  const cli = join(dir, "coding-agents-tmux");
+  const log = join(dir, "launcher.log");
+  executable(cli, `printf '%s\\n' "$*" > '${log}'`);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_BIN: cli });
+
+  try {
+    const result = await runCommand([
+      "/bin/bash",
+      join(process.cwd(), "integrations/external/focus-and-popup.sh"),
+      "--menu",
+    ]);
+    assert.equal(result.exitCode, 0);
+    assert.equal(readFileSync(log, "utf8"), "menu --client auto\n");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("external launcher opens the default popup without filter arguments on macOS Bash", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-launcher-default-"));
+  const cli = join(dir, "coding-agents-tmux");
+  const log = join(dir, "launcher.log");
+  executable(cli, `printf '%s\\n' "$*" > '${log}'`);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_BIN: cli });
+
+  try {
+    const result = await runCommand([
+      "/bin/bash",
+      join(process.cwd(), "integrations/external/focus-and-popup.sh"),
+    ]);
+    assert.equal(result.exitCode, 0);
+    assert.equal(readFileSync(log, "utf8"), "popup --client auto\n");
+  } finally {
+    restoreEnv();
+  }
+});

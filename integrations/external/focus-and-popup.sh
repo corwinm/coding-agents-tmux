@@ -12,9 +12,23 @@ REPO_ROOT="$(cd "$CURRENT_DIR/../.." && pwd)"
 CLI="${CODING_AGENTS_TMUX_BIN:-$REPO_ROOT/bin/coding-agents-tmux}"
 CLIENT="${CODING_AGENTS_TMUX_CLIENT:-auto}"
 FOCUS_COMMAND="${CODING_AGENTS_TMUX_FOCUS_COMMAND:-}"
+MODE="popup"
+ARGS=()
+
+for arg in "$@"; do
+  if [ "$arg" = "--menu" ]; then
+    MODE="menu"
+  else
+    ARGS+=("$arg")
+  fi
+done
 
 if [ -n "$FOCUS_COMMAND" ]; then
   "${SHELL:-/bin/sh}" -c "$FOCUS_COMMAND"
 fi
 
-exec "$CLI" popup --client "$CLIENT" "$@"
+if [ "${#ARGS[@]}" -gt 0 ]; then
+  exec "$CLI" "$MODE" --client "$CLIENT" "${ARGS[@]}"
+else
+  exec "$CLI" "$MODE" --client "$CLIENT"
+fi

@@ -279,16 +279,17 @@ The command is optional, runs after state changes, and is ignored when unset. It
 Bundled examples:
 
 - [`integrations/sketchybar`](integrations/sketchybar) renders the global agent summary in SketchyBar without polling
-- [`integrations/external`](integrations/external) focuses a configured terminal and launches the chooser from AeroSpace, Raycast, Hammerspoon, or another external launcher
+- [`integrations/external`](integrations/external) focuses a configured terminal and launches the full popup or compact menu from AeroSpace, Raycast, Hammerspoon, or another external launcher
 
-To open the popup outside tmux, target an attached client explicitly or let the CLI select the most recently active one:
+To open a chooser outside tmux, target an attached client explicitly or let the CLI select the most recently active one:
 
 ```bash
 ./bin/coding-agents-tmux popup --client auto
 ./bin/coding-agents-tmux popup --client /dev/ttys000 --waiting
+./bin/coding-agents-tmux menu --client auto
 ```
 
-The same `--client` option is available on `switch`. This only targets tmux; terminal placement and native focus remain the responsibility of the external window manager or launcher.
+The same `--client` option is available on `menu` and `switch`. This only targets tmux; terminal placement and native focus remain the responsibility of the external window manager or launcher.
 
 ## Configuration
 

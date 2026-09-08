@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import {
@@ -1038,6 +1038,67 @@ exit 1
     assert.match(log, /list-clients -F/);
     assert.match(log, /display-popup -c \/dev\/ttys002 -E/);
     assert.match(log, /popup-ui.*--client.*\/dev\/ttys002/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI menu --client auto opens the compact menu for the selected tmux client", async () => {
+  const fakeTmux = installFakeTmux(`
+printf '%s\n' "$*" >> '__LOG_PATH__'
+if [ "$1" = "list-clients" ]; then
+  printf '/dev/ttys001\t100\n/dev/ttys002\t300\n'
+  exit 0
+fi
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys002\n'
+  exit 0
+fi
+if [ "$1" = "display-menu" ]; then
+  exit 0
+fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    TMUX: undefined,
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "menu", "--client", "auto"]);
+
+    assert.equal(result.exitCode, 0);
+    const log = readFileSync(fakeTmux.logPath, "utf8");
+    assert.match(log, /list-clients -F/);
+    assert.match(log, /display-menu -c \/dev\/ttys002/);
+    assert.match(log, /'switch'.*'--client'.*'\/dev\/ttys002'/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI menu works inside tmux without an explicit client", async () => {
+  const fakeTmux = installFakeTmux(`
+printf '%s\n' "$*" >> '__LOG_PATH__'
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys002\n'
+  exit 0
+fi
+if [ "$1" = "display-menu" ]; then exit 0; fi
+printf 'unexpected args: %s\n' "$*" >&2
+exit 1
+`);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${dirname(process.execPath)}:/usr/bin:/bin`,
+    TMUX: "1",
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "menu"]);
+
+    assert.equal(result.exitCode, 0, result.stderrText);
+    assert.match(readFileSync(fakeTmux.logPath, "utf8"), /display-menu -T Coding Agent Sessions/);
   } finally {
     restoreEnv();
   }
