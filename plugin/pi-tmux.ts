@@ -16,7 +16,14 @@ interface PiExtensionContext {
 interface PiExtensionAPI {
   getSessionName(): string | undefined;
   on(
-    eventName: "session_start" | "agent_start" | "turn_start" | "agent_end" | "session_shutdown",
+    eventName:
+      | "session_start"
+      | "agent_start"
+      | "turn_start"
+      | "agent_end"
+      | "ui_prompt_start"
+      | "ui_prompt_end"
+      | "session_shutdown",
     handler: (event: unknown, ctx: PiExtensionContext) => void | Promise<void>,
   ): void;
 }
@@ -36,7 +43,7 @@ interface PiStateFile {
   paneId?: string | null;
   sessionFile?: string | null;
   sourceEventType?: string;
-  status?: "running" | "waiting-input" | "idle" | "new" | "unknown";
+  status?: "running" | "waiting-question" | "waiting-input" | "idle" | "new" | "unknown";
   target?: string | null;
   title?: string;
   updatedAt?: number;
@@ -55,6 +62,11 @@ interface AssistantLikeMessage {
 
 interface AgentEndEvent {
   messages?: AssistantLikeMessage[];
+}
+
+interface UiPromptEvent {
+  kind?: "select" | "confirm" | "input" | "editor" | "custom";
+  title?: string;
 }
 
 function normalizeEnvValue(value: string | undefined): string | null {
@@ -326,6 +338,35 @@ export default function (pi: PiExtensionAPI) {
       sessionFile: ctx.sessionManager.getSessionFile() ?? null,
       sourceEventType: "agent_end",
       status: waiting.status,
+      title: ctx.sessionManager.getSessionName(),
+    });
+  });
+
+  pi.on("ui_prompt_start", (event, ctx) => {
+    const prompt = event as UiPromptEvent;
+    const isQuestion = prompt.kind === "select" || prompt.kind === "confirm";
+
+    persistState({
+      activity: "busy",
+      detail: isQuestion
+        ? "Pi is waiting for a selection or confirmation"
+        : "Pi is waiting for user input",
+      directory: ctx.cwd,
+      sessionFile: ctx.sessionManager.getSessionFile() ?? null,
+      sourceEventType: "ui_prompt_start",
+      status: isQuestion ? "waiting-question" : "waiting-input",
+      title: ctx.sessionManager.getSessionName(),
+    });
+  });
+
+  pi.on("ui_prompt_end", (_event, ctx) => {
+    persistState({
+      activity: "busy",
+      detail: "Pi resumed processing after user input",
+      directory: ctx.cwd,
+      sessionFile: ctx.sessionManager.getSessionFile() ?? null,
+      sourceEventType: "ui_prompt_end",
+      status: "running",
       title: ctx.sessionManager.getSessionName(),
     });
   });

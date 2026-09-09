@@ -362,7 +362,8 @@ That extension publishes pane-aware Pi state under:
 
 Pi runtime support is intentionally minimal and extensible:
 
-- with the bundled Pi extension loaded, Pi panes can report `new`, `running`, `idle`, and best-effort `waiting-input`
+- with the bundled Pi extension loaded, Pi panes can report `new`, `running`, `idle`, `waiting-question`, and `waiting-input`
+- blocking Pi extension UI prompts, including `ask_user_question`, are reported as waiting until the prompt closes
 - without the extension, `coding-agents-tmux` falls back to pane preview heuristics when possible
 - if preview is inconclusive, Pi falls back to a coarse `running` state when a `pi` process is still detected in the tmux pane
 - Pi has no built-in permission or plan mode integration here yet, so those states are not modeled specially

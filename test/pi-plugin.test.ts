@@ -185,6 +185,49 @@ test("Pi plugin supports CODING_AGENTS_TMUX_PI_STATE_DIR as a state dir override
   }
 });
 
+test("Pi plugin reports blocking UI prompts as waiting", async () => {
+  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
+  const emptyPath = mkdtempSync(join(tmpdir(), "coding-agents-tmux-no-tmux-"));
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_PI_STATE_DIR: stateDir,
+    PATH: emptyPath,
+    TMUX_PANE: undefined,
+  });
+
+  try {
+    const { default: installPiPlugin } = await loadPiPlugin();
+    const handlers = new Map<PiPluginEventName, PiPluginHandler>();
+
+    installPiPlugin({
+      getSessionName: () => "Pi Session",
+      on: (eventName: PiPluginEventName, handler: PiPluginHandler) => {
+        handlers.set(eventName, handler);
+      },
+    });
+
+    const ctx: PiPluginContext = {
+      cwd: "/tmp/pi-project",
+      sessionManager: {
+        getSessionFile: () => "/tmp/pi-session.json",
+        getSessionName: () => "Pi Session",
+      },
+    };
+
+    await handlers.get("ui_prompt_start")?.({ kind: "select", title: "Pick one" }, ctx);
+    assert.equal(readOnlyStateFile(stateDir).status, "waiting-question");
+    assert.equal(readOnlyStateFile(stateDir).sourceEventType, "ui_prompt_start");
+
+    await handlers.get("ui_prompt_end")?.({ kind: "select", title: "Pick one" }, ctx);
+    assert.equal(readOnlyStateFile(stateDir).status, "running");
+    assert.equal(readOnlyStateFile(stateDir).sourceEventType, "ui_prompt_end");
+
+    await handlers.get("ui_prompt_start")?.({ kind: "input", title: "Explain" }, ctx);
+    assert.equal(readOnlyStateFile(stateDir).status, "waiting-input");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("Pi plugin refreshes tmux clients after removing state on shutdown", async () => {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-plugin-state-"));
   const fakeTmux = installFakeTmux(`
