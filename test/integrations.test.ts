@@ -161,3 +161,37 @@ test("external launcher opens the default popup without filter arguments on macO
     restoreEnv();
   }
 });
+
+test("external index launcher focuses and switches to the numbered agent", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-launcher-index-"));
+  const cli = join(dir, "coding-agents-tmux");
+  const log = join(dir, "launcher.log");
+  executable(
+    cli,
+    `printf 'cli %s\\n' "$*" >> '${log}'
+if [ "$1" = "list" ]; then
+  printf '%s' '[{"pane":{"target":"alpha:1.0"}},{"pane":{"target":"beta:2.1"}}]'
+fi`,
+  );
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_BIN: cli,
+    CODING_AGENTS_TMUX_CLIENT: "client-1",
+    CODING_AGENTS_TMUX_FOCUS_COMMAND: `printf 'focus\\n' >> '${log}'`,
+  });
+
+  try {
+    const result = await runCommand([
+      "/bin/bash",
+      join(process.cwd(), "integrations/external/focus-and-switch-index.sh"),
+      "2",
+      "--waiting",
+    ]);
+    assert.equal(result.exitCode, 0);
+    assert.equal(
+      readFileSync(log, "utf8"),
+      "focus\ncli list --json --waiting\ncli switch beta:2.1 --client client-1 --waiting\n",
+    );
+  } finally {
+    restoreEnv();
+  }
+});

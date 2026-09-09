@@ -26,4 +26,24 @@ alt-w = 'exec-and-forget /path/to/user-wrapper --waiting'
 alt-m = 'exec-and-forget /path/to/user-wrapper --menu'
 ```
 
-The generic launcher only runs the configured focus command, identifies the most recently active attached tmux client, and opens the chooser there. It supplies a UTF-8 locale when macOS launches it without locale variables so tmux preserves the CLI's field delimiters.
+To jump directly to the first, second, or third discovered agent, create a similar wrapper around `focus-and-switch-index.sh`:
+
+```sh
+#!/bin/sh
+plugin_dir="${TMUX_PLUGIN_MANAGER_PATH:-$HOME/.tmux/plugins}/coding-agents-tmux"
+export CODING_AGENTS_TMUX_FOCUS_COMMAND='aerospace workspace T'
+exec "$plugin_dir/integrations/external/focus-and-switch-index.sh" "$@"
+```
+
+Then bind number keys in AeroSpace (choose any modifiers you prefer):
+
+```toml
+[mode.main.binding]
+alt-1 = 'exec-and-forget /path/to/user-index-wrapper 1'
+alt-2 = 'exec-and-forget /path/to/user-index-wrapper 2'
+alt-3 = 'exec-and-forget /path/to/user-index-wrapper 3'
+```
+
+Indexes are one-based and follow the CLI's stable pane-target order. Optional list filters can follow the index, for example `2 --waiting` or `1 --agent pi`. If an index is greater than the number of matching panes, the script exits without switching.
+
+The generic launchers run the configured focus command, identify the most recently active attached tmux client, and open or switch there. They supply a UTF-8 locale when macOS launches them without locale variables so tmux preserves the CLI's field delimiters.
