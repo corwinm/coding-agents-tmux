@@ -42,35 +42,57 @@ async function loadPlugin() {
   return import(`../plugin/coding-agents-tmux.ts?test=${Math.random()}`);
 }
 
-function installExecutable(dir: string, name: string, script: string): void {
-  const path = join(dir, name);
-  writeFileSync(path, `#!/usr/bin/env bash\nset -euo pipefail\n${script}\n`, "utf8");
-  chmodSync(path, 0o755);
+interface TestEvent {
+  type: string;
+  properties?: Record<string, unknown>;
+  timeUpdated?: number;
 }
 
-test("plugin preserves waiting state for ambiguous session.status heartbeats", async () => {
+async function startPlugin() {
+  const { CodingAgentsTmuxPlugin } = await loadPlugin();
+  return CodingAgentsTmuxPlugin({
+    directory: "/tmp/project",
+    project: { name: "Project" },
+    client: { app: { log: async () => null } },
+  }) as Promise<{ event: (input: { event: TestEvent }) => Promise<void> }>;
+}
+
+function isolatedStateDir(): { stateDir: string; restoreEnv: () => void } {
   const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_STATE_DIR: stateDir,
     TMUX: undefined,
     TMUX_PANE: undefined,
   });
+  return { stateDir, restoreEnv };
+}
+
+function installExecutable(dir: string, name: string, script: string): void {
+  const path = join(dir, name);
+  writeFileSync(path, `#!/usr/bin/env bash\nset -euo pipefail\n${script}\n`, "utf8");
+  chmodSync(path, 0o755);
+}
+
+test("plugin latches waiting through a busy session.status heartbeat", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
 
   try {
-    const { CodingAgentsTmuxPlugin } = await loadPlugin();
-    const plugin = await CodingAgentsTmuxPlugin({
-      directory: "/tmp/project",
-      project: { name: "Project" },
-      client: { app: { log: async () => null } },
-    });
+    const plugin = await startPlugin();
 
-    await plugin.event({ event: { type: "permission.asked", timeUpdated: 100 } });
-    await plugin.event({ event: { type: "session.status", timeUpdated: 101 } });
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_a" } },
+    });
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_a", status: { type: "busy" } },
+      },
+    });
 
     const state = readOnlyStateFile(stateDir);
     assert.equal(state.status, "waiting-input");
     assert.equal(state.activity, "busy");
-    assert.equal(state.detail, "session.status kept prior waiting state");
+    assert.equal(state.detail, "session.status kept latched waiting state");
   } finally {
     restoreEnv();
   }
@@ -102,25 +124,26 @@ test("plugin supports CODING_AGENTS_TMUX_STATE_DIR as a state dir override", asy
   }
 });
 
-test("plugin switches back to running when session.status explicitly reports busy after a reply", async () => {
-  const stateDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-plugin-test-"));
-  const restoreEnv = setEnv({
-    CODING_AGENTS_TMUX_STATE_DIR: stateDir,
-    TMUX: undefined,
-    TMUX_PANE: undefined,
-  });
+test("plugin switches back to running after the prompt is replied", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
 
   try {
-    const { CodingAgentsTmuxPlugin } = await loadPlugin();
-    const plugin = await CodingAgentsTmuxPlugin({
-      directory: "/tmp/project",
-      project: { name: "Project" },
-      client: { app: { log: async () => null } },
-    });
+    const plugin = await startPlugin();
 
-    await plugin.event({ event: { type: "permission.asked", timeUpdated: 100 } });
     await plugin.event({
-      event: { type: "session.status", status: "running", busy: true, timeUpdated: 101 },
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_a" } },
+    });
+    await plugin.event({
+      event: {
+        type: "permission.replied",
+        properties: { sessionID: "ses_a", requestID: "req-1", reply: "once" },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_a", status: { type: "busy" } },
+      },
     });
 
     const state = readOnlyStateFile(stateDir);
@@ -194,6 +217,212 @@ test("plugin notifies the configured integration after its debounced refresh", a
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
     assert.equal(readFileSync(logPath, "utf8"), "changed\n");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin latches waiting through a running message.part.updated", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_a" } },
+    });
+    await plugin.event({
+      event: {
+        type: "message.part.updated",
+        properties: { sessionID: "ses_a", part: { state: { status: "running" } } },
+      },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "waiting-input");
+    assert.equal(state.detail, "message.part.updated kept latched waiting state");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin keeps waiting until every concurrent prompt is replied", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_a" } },
+    });
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-2", sessionID: "ses_a" } },
+    });
+    await plugin.event({
+      event: {
+        type: "permission.replied",
+        properties: { sessionID: "ses_a", requestID: "req-1" },
+      },
+    });
+
+    let state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "waiting-input", "still waiting while one prompt is pending");
+    assert.equal(state.detail, "permission.replied with pending prompt");
+
+    await plugin.event({
+      event: {
+        type: "permission.replied",
+        properties: { sessionID: "ses_a", requestID: "req-2" },
+      },
+    });
+
+    state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "running", "running once all prompts are replied");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin releases the latch on question.rejected", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "question.asked",
+        properties: { id: "q-1", sessionID: "ses_a", questions: [{ options: ["a", "b"] }] },
+      },
+    });
+    assert.equal(readOnlyStateFile(stateDir).status, "waiting-question");
+
+    await plugin.event({
+      event: { type: "question.rejected", properties: { sessionID: "ses_a", requestID: "q-1" } },
+    });
+
+    assert.equal(readOnlyStateFile(stateDir).status, "running");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin clears the latch on session.idle", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_a" } },
+    });
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "ses_a" } },
+    });
+
+    assert.equal(readOnlyStateFile(stateDir).status, "idle");
+
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_a", status: { type: "busy" } },
+      },
+    });
+
+    assert.equal(
+      readOnlyStateFile(stateDir).status,
+      "running",
+      "latch cleared: busy heartbeat is no longer held at waiting",
+    );
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin latches on an ask with no request id and still releases on idle", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({ event: { type: "permission.asked", properties: { sessionID: "ses_a" } } });
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_a", status: { type: "busy" } },
+      },
+    });
+    assert.equal(readOnlyStateFile(stateDir).status, "waiting-input", "sentinel key latches");
+
+    await plugin.event({ event: { type: "session.idle", properties: { sessionID: "ses_a" } } });
+    assert.equal(readOnlyStateFile(stateDir).status, "idle");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin records the session id from properties.sessionID, not the event id", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.status",
+        id: "evt_should_not_win",
+        properties: { sessionID: "ses_real", status: { type: "busy" } },
+      } as TestEvent,
+    });
+
+    assert.equal(readOnlyStateFile(stateDir).sessionId, "ses_real");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin leaves session identity untouched for unrelated events", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.updated",
+        properties: {
+          sessionID: "ses_real",
+          info: { id: "ses_real", title: "Real title" },
+        },
+      },
+    });
+    await plugin.event({
+      event: { type: "file.watcher.updated", id: "evt_other", properties: {} } as TestEvent,
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.sessionId, "ses_real");
+    assert.equal(state.title, "Real title");
+    assert.equal(state.directory, "/tmp/project");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin maps question.asked without options to waiting-input", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "question.asked",
+        properties: { id: "q-1", sessionID: "ses_a", questions: [{ options: [] }] },
+      },
+    });
+
+    assert.equal(readOnlyStateFile(stateDir).status, "waiting-input");
   } finally {
     restoreEnv();
   }

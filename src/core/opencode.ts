@@ -773,11 +773,26 @@ function parseServerMap(value: string | undefined): Record<string, string> {
   return result;
 }
 
+// NOTE: duplicated verbatim in plugin/coding-agents-tmux.ts — the plugin ships
+// as a standalone symlink and cannot import from src/. Keep both copies in sync.
 function getNestedValue(payload: unknown, path: string[]): unknown {
   let current: unknown = payload;
 
   for (const key of path) {
-    if (!current || typeof current !== "object" || Array.isArray(current) || !(key in current)) {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+
+    if (Array.isArray(current)) {
+      const index = Number(key);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        return undefined;
+      }
+      current = current[index];
+      continue;
+    }
+
+    if (!(key in current)) {
       return undefined;
     }
 
