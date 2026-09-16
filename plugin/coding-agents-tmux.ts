@@ -74,11 +74,26 @@ function scheduleTmuxStatusRefresh() {
   }, 150);
 }
 
+// NOTE: duplicated verbatim in src/core/opencode.ts — the plugin ships as a
+// standalone symlink and cannot import from src/. Keep both copies in sync.
 function getNestedValue(payload: unknown, path: string[]): unknown {
   let current: unknown = payload;
 
   for (const key of path) {
-    if (!current || typeof current !== "object" || Array.isArray(current) || !(key in current)) {
+    if (!current || typeof current !== "object") {
+      return undefined;
+    }
+
+    if (Array.isArray(current)) {
+      const index = Number(key);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) {
+        return undefined;
+      }
+      current = current[index];
+      continue;
+    }
+
+    if (!(key in current)) {
       return undefined;
     }
 
@@ -254,25 +269,16 @@ function getWaitingStatus(input: {
   return null;
 }
 
-function shouldPreserveWaitingStatus(input: {
-  currentStatus: string;
-  eventType: string;
-  status: string | null;
-  busy: boolean | null;
-}) {
-  if (!isWaitingStatus(input.currentStatus)) {
-    return false;
-  }
+type WaitingStatus = "waiting-question" | "waiting-input";
 
-  if (input.eventType === "permission.replied" || input.eventType === "question.replied") {
-    return false;
-  }
+const MISSING_REQUEST_ID = "__coding-agents-tmux:unknown-request__";
 
-  if (input.status === "idle" || input.busy === false) {
-    return false;
-  }
-
-  return input.eventType === "session.status" && input.status === null && input.busy === null;
+function getRequestId(event: { type: string; [key: string]: unknown }): string {
+  const id = getStringCandidate(event, [
+    ["properties", "id"],
+    ["properties", "requestID"],
+  ]);
+  return id ?? MISSING_REQUEST_ID;
 }
 
 export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: PluginInitContext) => {
@@ -291,6 +297,20 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
     sourceEventType: "plugin.init",
   };
 
+  // Sticky latch of unreplied permission/question prompts, keyed by request id.
+  // While non-empty, the pane is forced to the recorded waiting status so that
+  // interleaved busy events (message.part.updated, session.status) cannot clobber
+  // it. Released per-key on reply/reject and wholesale on session.idle.
+  const pendingPrompts = new Map<string, WaitingStatus>();
+
+  function latchWaitingStatus(): WaitingStatus | null {
+    let latest: WaitingStatus | null = null;
+    for (const value of pendingPrompts.values()) {
+      latest = value;
+    }
+    return latest;
+  }
+
   async function persist() {
     const target = resolveTmuxPaneTarget(state.paneId);
 
@@ -307,24 +327,21 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
 
   function applyDerivedStatus(event: { type: string; [key: string]: unknown }) {
     const sessionId = getStringCandidate(event, [
-      ["session", "id"],
-      ["sessionID"],
-      ["sessionId"],
-      ["id"],
       ["properties", "sessionID"],
       ["properties", "info", "id"],
       ["properties", "part", "sessionID"],
+      ["session", "id"],
+      ["sessionID"],
+      ["sessionId"],
     ]);
     const sessionTitle = getStringCandidate(event, [
-      ["session", "title"],
-      ["title"],
       ["properties", "info", "title"],
+      ["session", "title"],
     ]);
     const sessionDirectory = getStringCandidate(event, [
-      ["session", "directory"],
-      ["directory"],
       ["properties", "info", "directory"],
       ["properties", "info", "path", "cwd"],
+      ["session", "directory"],
     ]);
     const status = getStatusCandidate(event);
     const tool = getToolCandidate(event);
@@ -355,6 +372,7 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
     state.sourceEventType = event.type;
 
     if (event.type === "session.idle") {
+      pendingPrompts.clear();
       state.activity = "idle";
       state.status = "idle";
       state.detail = "session.idle event";
@@ -370,17 +388,43 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
 
     const waitingStatus = getWaitingStatus({ status, tool, optionCount });
 
-    if (event.type === "permission.asked") {
+    if (event.type === "permission.asked" || event.type === "question.asked") {
+      const forced =
+        waitingStatus ?? (event.type === "question.asked" ? "waiting-question" : "waiting-input");
+      pendingPrompts.set(getRequestId(event), forced);
       state.activity = "busy";
-      state.status = waitingStatus ?? "waiting-input";
-      state.detail = "permission.asked event";
+      state.status = forced;
+      state.detail = `${event.type} event`;
       return;
     }
 
-    if (event.type === "permission.replied" || event.type === "question.replied") {
+    if (
+      event.type === "permission.replied" ||
+      event.type === "question.replied" ||
+      event.type === "question.rejected"
+    ) {
+      pendingPrompts.delete(getRequestId(event));
+      const remaining = latchWaitingStatus();
+
+      if (remaining) {
+        state.activity = "busy";
+        state.status = remaining;
+        state.detail = `${event.type} with pending prompt`;
+        return;
+      }
+
       state.activity = "busy";
       state.status = "running";
       state.detail = `${event.type} event`;
+      return;
+    }
+
+    // Any other event while a prompt is latched keeps the pane waiting.
+    const latched = latchWaitingStatus();
+    if (latched) {
+      state.activity = "busy";
+      state.status = latched;
+      state.detail = `${event.type} kept latched waiting state`;
       return;
     }
 
@@ -404,19 +448,6 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
       busy === true ||
       event.type === "session.status"
     ) {
-      if (
-        shouldPreserveWaitingStatus({
-          currentStatus: state.status,
-          eventType: event.type,
-          status,
-          busy,
-        })
-      ) {
-        state.activity = "busy";
-        state.detail = `${event.type} kept prior waiting state`;
-        return;
-      }
-
       state.activity = "busy";
       state.status = "running";
       state.detail = `${event.type} running event`;
