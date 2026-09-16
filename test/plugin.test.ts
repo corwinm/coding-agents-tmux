@@ -427,3 +427,298 @@ test("plugin maps question.asked without options to waiting-input", async () => 
     restoreEnv();
   }
 });
+
+test("plugin keeps root identity when a child session emits events", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.updated",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: {
+          sessionID: "ses_child",
+          info: { id: "ses_child", title: "Child", parentID: "ses_root" },
+        },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_child", info: { id: "ses_child", title: "Child" } },
+      },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.sessionId, "ses_root");
+    assert.equal(state.title, "Root");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin lets a child prompt project waiting onto the root pane", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: {
+          sessionID: "ses_child",
+          info: { id: "ses_child", parentID: "ses_root" },
+        },
+      },
+    });
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_child" } },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "waiting-input");
+    assert.equal(state.sessionId, "ses_root");
+    assert.equal(state.detail, "permission.asked event (child session)");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin does not idle the root pane when a child session goes idle", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_child", info: { id: "ses_child", parentID: "ses_root" } },
+      },
+    });
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_root" } },
+    });
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "ses_child" } },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.status, "waiting-input", "root prompt latch survives child idle");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin child idle clears only its own latch and falls through", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_child", info: { id: "ses_child", parentID: "ses_root" } },
+      },
+    });
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-c", sessionID: "ses_child" } },
+    });
+    assert.equal(readOnlyStateFile(stateDir).status, "waiting-input");
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "ses_child" } },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.notEqual(state.status, "idle", "child idle must not idle root");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin resolves nested children up to the root ancestor", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_mid", info: { id: "ses_mid", parentID: "ses_root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_leaf", info: { id: "ses_leaf", parentID: "ses_mid" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.updated",
+        properties: {
+          sessionID: "ses_leaf",
+          info: { id: "ses_leaf", title: "Leaf", directory: "/tmp/leaf" },
+        },
+      },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.sessionId, "ses_root");
+    assert.equal(state.title, "Root");
+    assert.equal(state.directory, "/tmp/project");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin treats a session id seen before its metadata as a child", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_late" } },
+    });
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "ses_late" } },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.sessionId, "ses_root", "delayed-metadata session cannot take identity");
+    assert.notEqual(state.status, "idle", "delayed-metadata child idle cannot idle root");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin ignores a child completion arriving after the root idles", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_child", info: { id: "ses_child", parentID: "ses_root" } },
+      },
+    });
+    await plugin.event({ event: { type: "session.idle", properties: { sessionID: "ses_root" } } });
+    assert.equal(readOnlyStateFile(stateDir).status, "idle");
+
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "ses_child" } },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.sessionId, "ses_root");
+    assert.equal(state.status, "idle");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin adopts a new root after the previous root is deleted", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root1", info: { id: "ses_root1", title: "Root1" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.deleted",
+        properties: { sessionID: "ses_root1", info: { id: "ses_root1" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root2", info: { id: "ses_root2", title: "Root2" } },
+      },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.sessionId, "ses_root2");
+    assert.equal(state.title, "Root2");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin single-session behavior is unchanged by scope tracking", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: { type: "permission.asked", properties: { id: "req-1", sessionID: "ses_a" } },
+    });
+    assert.equal(readOnlyStateFile(stateDir).status, "waiting-input");
+
+    await plugin.event({
+      event: { type: "permission.replied", properties: { id: "req-1", sessionID: "ses_a" } },
+    });
+    assert.equal(readOnlyStateFile(stateDir).status, "running");
+
+    await plugin.event({ event: { type: "session.idle", properties: { sessionID: "ses_a" } } });
+    assert.equal(readOnlyStateFile(stateDir).status, "idle");
+  } finally {
+    restoreEnv();
+  }
+});

@@ -272,6 +272,7 @@ function getWaitingStatus(input: {
 type WaitingStatus = "waiting-question" | "waiting-input";
 
 const MISSING_REQUEST_ID = "__coding-agents-tmux:unknown-request__";
+const MISSING_SESSION_ID = "__coding-agents-tmux:unknown-session__";
 
 function getRequestId(event: { type: string; [key: string]: unknown }): string {
   const id = getStringCandidate(event, [
@@ -279,6 +280,91 @@ function getRequestId(event: { type: string; [key: string]: unknown }): string {
     ["properties", "requestID"],
   ]);
   return id ?? MISSING_REQUEST_ID;
+}
+
+function getEventSessionId(event: { type: string; [key: string]: unknown }): string | null {
+  return getStringCandidate(event, [
+    ["properties", "sessionID"],
+    ["properties", "info", "id"],
+    ["properties", "part", "sessionID"],
+    ["session", "id"],
+    ["sessionID"],
+    ["sessionId"],
+  ]);
+}
+
+const SESSION_LIFECYCLE_EVENTS = new Set(["session.created", "session.updated", "session.deleted"]);
+
+// Tracks root/child session identity within a single pane so subagent (child)
+// sessions cannot take ownership of the pane's reported identity. Fed only by
+// session.* lifecycle events (info.parentID), since parentID on message info
+// refers to a parent message, not a parent session.
+class SessionScopeTracker {
+  private parents = new Map<string, string | null>();
+  private rootId: string | null = null;
+
+  private static readonly MAX_WALK_DEPTH = 32;
+
+  // Record parent metadata from a session.* lifecycle event and (re-)elect root.
+  recordLifecycle(sessionId: string, parentId: string | null, deleted: boolean) {
+    if (deleted) {
+      this.parents.delete(sessionId);
+      if (this.rootId === sessionId) {
+        this.rootId = null;
+      }
+      return;
+    }
+
+    this.parents.set(sessionId, parentId);
+
+    if (parentId === null) {
+      const ancestor = this.resolveAncestor(sessionId);
+      if (this.rootId === null || this.rootId === sessionId || this.rootId === ancestor) {
+        this.rootId = ancestor;
+      }
+      return;
+    }
+
+    if (this.rootId === sessionId) {
+      this.rootId = this.resolveAncestor(sessionId);
+    }
+  }
+
+  // First observed session id becomes the provisional root.
+  observe(sessionId: string) {
+    if (this.rootId === null) {
+      this.rootId = sessionId;
+    }
+  }
+
+  classify(sessionId: string | null): "root" | "child" | "unknown" {
+    if (!sessionId) {
+      return "unknown";
+    }
+    if (this.rootId !== null && sessionId === this.rootId) {
+      return "root";
+    }
+    // Any other session (known child, or unknown until proven root) is presumed
+    // a child so it cannot take identity or idle the pane.
+    return "child";
+  }
+
+  private resolveAncestor(sessionId: string): string {
+    let current = sessionId;
+    const seen = new Set<string>();
+    for (let depth = 0; depth < SessionScopeTracker.MAX_WALK_DEPTH; depth += 1) {
+      if (seen.has(current)) {
+        return current;
+      }
+      seen.add(current);
+      const parent = this.parents.get(current);
+      if (parent === undefined || parent === null) {
+        return current;
+      }
+      current = parent;
+    }
+    return current;
+  }
 }
 
 export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: PluginInitContext) => {
@@ -297,11 +383,28 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
     sourceEventType: "plugin.init",
   };
 
-  // Sticky latch of unreplied permission/question prompts, keyed by request id.
-  // While non-empty, the pane is forced to the recorded waiting status so that
-  // interleaved busy events (message.part.updated, session.status) cannot clobber
-  // it. Released per-key on reply/reject and wholesale on session.idle.
+  // Sticky latch of unreplied permission/question prompts, keyed by
+  // `${sessionId}:${requestId}`. While non-empty, the pane is forced to the
+  // recorded waiting status so that interleaved busy events (message.part.updated,
+  // session.status) cannot clobber it. Released per-key on reply/reject, wholesale
+  // on a root session.idle, and per-child on a child session.idle. Keying by
+  // session id keeps a child's prompts in a distinct namespace from the root's,
+  // even when both fall back to a missing-request or missing-session sentinel.
   const pendingPrompts = new Map<string, WaitingStatus>();
+  const scope = new SessionScopeTracker();
+
+  function latchKey(sessionId: string | null, requestId: string): string {
+    return `${sessionId ?? MISSING_SESSION_ID}:${requestId}`;
+  }
+
+  function clearLatchForSession(sessionId: string | null) {
+    const prefix = `${sessionId ?? MISSING_SESSION_ID}:`;
+    for (const key of pendingPrompts.keys()) {
+      if (key.startsWith(prefix)) {
+        pendingPrompts.delete(key);
+      }
+    }
+  }
 
   function latchWaitingStatus(): WaitingStatus | null {
     let latest: WaitingStatus | null = null;
@@ -326,14 +429,19 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
   }
 
   function applyDerivedStatus(event: { type: string; [key: string]: unknown }) {
-    const sessionId = getStringCandidate(event, [
-      ["properties", "sessionID"],
-      ["properties", "info", "id"],
-      ["properties", "part", "sessionID"],
-      ["session", "id"],
-      ["sessionID"],
-      ["sessionId"],
-    ]);
+    const sessionId = getEventSessionId(event);
+
+    if (SESSION_LIFECYCLE_EVENTS.has(event.type) && sessionId) {
+      const parentId = getStringCandidate(event, [["properties", "info", "parentID"]]);
+      scope.recordLifecycle(sessionId, parentId, event.type === "session.deleted");
+    } else if (sessionId) {
+      scope.observe(sessionId);
+    }
+
+    const eventScope = scope.classify(sessionId);
+    const isChild = eventScope === "child";
+    const childSuffix = isChild ? " (child session)" : "";
+
     const sessionTitle = getStringCandidate(event, [
       ["properties", "info", "title"],
       ["session", "title"],
@@ -356,33 +464,49 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
       ["properties", "part", "state", "time", "end"],
     ]);
 
-    if (sessionId) {
-      state.sessionId = sessionId;
-    }
+    // Only a root-scoped session may take ownership of the pane's identity.
+    if (!isChild) {
+      if (sessionId) {
+        state.sessionId = sessionId;
+      }
 
-    if (sessionTitle) {
-      state.title = sessionTitle;
-    }
+      if (sessionTitle) {
+        state.title = sessionTitle;
+      }
 
-    if (sessionDirectory) {
-      state.directory = sessionDirectory;
+      if (sessionDirectory) {
+        state.directory = sessionDirectory;
+      }
     }
 
     state.updatedAt = updatedAt ?? Date.now();
     state.sourceEventType = event.type;
 
     if (event.type === "session.idle") {
-      pendingPrompts.clear();
-      state.activity = "idle";
-      state.status = "idle";
-      state.detail = "session.idle event";
-      return;
+      if (isChild) {
+        // A child idle must never idle the root pane or release the root latch.
+        clearLatchForSession(sessionId);
+        const remaining = latchWaitingStatus();
+        if (remaining) {
+          state.activity = "busy";
+          state.status = remaining;
+          state.detail = `${event.type} kept latched waiting state${childSuffix}`;
+          return;
+        }
+        // Fall through to normal derivation without forcing idle.
+      } else {
+        pendingPrompts.clear();
+        state.activity = "idle";
+        state.status = "idle";
+        state.detail = "session.idle event";
+        return;
+      }
     }
 
     if (event.type === "session.error") {
       state.activity = "unknown";
       state.status = "unknown";
-      state.detail = "session.error event";
+      state.detail = `session.error event${childSuffix}`;
       return;
     }
 
@@ -391,10 +515,10 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
     if (event.type === "permission.asked" || event.type === "question.asked") {
       const forced =
         waitingStatus ?? (event.type === "question.asked" ? "waiting-question" : "waiting-input");
-      pendingPrompts.set(getRequestId(event), forced);
+      pendingPrompts.set(latchKey(sessionId, getRequestId(event)), forced);
       state.activity = "busy";
       state.status = forced;
-      state.detail = `${event.type} event`;
+      state.detail = `${event.type} event${childSuffix}`;
       return;
     }
 
@@ -403,19 +527,19 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
       event.type === "question.replied" ||
       event.type === "question.rejected"
     ) {
-      pendingPrompts.delete(getRequestId(event));
+      pendingPrompts.delete(latchKey(sessionId, getRequestId(event)));
       const remaining = latchWaitingStatus();
 
       if (remaining) {
         state.activity = "busy";
         state.status = remaining;
-        state.detail = `${event.type} with pending prompt`;
+        state.detail = `${event.type} with pending prompt${childSuffix}`;
         return;
       }
 
       state.activity = "busy";
       state.status = "running";
-      state.detail = `${event.type} event`;
+      state.detail = `${event.type} event${childSuffix}`;
       return;
     }
 
@@ -424,21 +548,21 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
     if (latched) {
       state.activity = "busy";
       state.status = latched;
-      state.detail = `${event.type} kept latched waiting state`;
+      state.detail = `${event.type} kept latched waiting state${childSuffix}`;
       return;
     }
 
     if (waitingStatus) {
       state.activity = "busy";
       state.status = waitingStatus;
-      state.detail = `${event.type} waiting event`;
+      state.detail = `${event.type} waiting event${childSuffix}`;
       return;
     }
 
     if (status === "idle" || busy === false) {
       state.activity = "idle";
       state.status = "idle";
-      state.detail = `${event.type} idle event`;
+      state.detail = `${event.type} idle event${childSuffix}`;
       return;
     }
 
@@ -450,7 +574,7 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
     ) {
       state.activity = "busy";
       state.status = "running";
-      state.detail = `${event.type} running event`;
+      state.detail = `${event.type} running event${childSuffix}`;
       return;
     }
   }
