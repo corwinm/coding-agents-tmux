@@ -655,6 +655,20 @@ test("plugin ignores a child completion arriving after the root idles", async ()
     await plugin.event({ event: { type: "session.idle", properties: { sessionID: "ses_root" } } });
     assert.equal(readOnlyStateFile(stateDir).status, "idle");
 
+    // Real child completion emits session.status(idle) before session.idle;
+    // neither may re-project the idle root as running.
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_child", status: { type: "idle" } },
+      },
+    });
+    assert.equal(
+      readOnlyStateFile(stateDir).status,
+      "idle",
+      "child status(idle) must not wake root",
+    );
+
     await plugin.event({
       event: { type: "session.idle", properties: { sessionID: "ses_child" } },
     });
@@ -728,6 +742,14 @@ test("plugin adopts a replacement root after the previous root is deleted", asyn
       event: {
         type: "session.created",
         properties: { sessionID: "ses_child", info: { id: "ses_child", parentID: "ses_root1" } },
+      },
+    });
+    // Metadata-light update omitting parentID must not erase the known parent,
+    // or the child could later usurp the root slot.
+    await plugin.event({
+      event: {
+        type: "session.updated",
+        properties: { sessionID: "ses_child", info: { id: "ses_child", title: "Child" } },
       },
     });
     await plugin.event({
