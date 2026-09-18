@@ -667,6 +667,96 @@ test("plugin ignores a child completion arriving after the root idles", async ()
   }
 });
 
+test("plugin keeps the root busy when a child emits session.status(idle) then idle", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root", info: { id: "ses_root", title: "Root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_child", info: { id: "ses_child", parentID: "ses_root" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_root", status: { type: "running" } },
+      },
+    });
+    assert.equal(readOnlyStateFile(stateDir).activity, "busy", "root is working");
+
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_child", status: { type: "idle" } },
+      },
+    });
+    await plugin.event({
+      event: { type: "session.idle", properties: { sessionID: "ses_child" } },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.notEqual(state.status, "idle", "child completion must not idle the root pane");
+    assert.equal(state.sessionId, "ses_root", "child completion must not take identity");
+    assert.equal(state.title, "Root", "root title preserved through child completion");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin adopts a replacement root after the previous root is deleted", async () => {
+  const { stateDir, restoreEnv } = isolatedStateDir();
+
+  try {
+    const plugin = await startPlugin();
+
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root1", info: { id: "ses_root1", title: "Root1" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_child", info: { id: "ses_child", parentID: "ses_root1" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.deleted",
+        properties: { sessionID: "ses_root1", info: { id: "ses_root1" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.status",
+        properties: { sessionID: "ses_child", status: { type: "running" } },
+      },
+    });
+    await plugin.event({
+      event: {
+        type: "session.created",
+        properties: { sessionID: "ses_root2", info: { id: "ses_root2", title: "Root2" } },
+      },
+    });
+
+    const state = readOnlyStateFile(stateDir);
+    assert.equal(state.sessionId, "ses_root2", "replacement root must reclaim identity");
+    assert.equal(state.title, "Root2", "stale Root1 title must be replaced");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("plugin adopts a new root after the previous root is deleted", async () => {
   const { stateDir, restoreEnv } = isolatedStateDir();
 

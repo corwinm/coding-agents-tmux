@@ -330,9 +330,12 @@ class SessionScopeTracker {
     }
   }
 
-  // First observed session id becomes the provisional root.
+  // First observed session id becomes the provisional root — but never a session
+  // already known to be a child. After a root is deleted its children keep their
+  // recorded parent, so a trailing child event cannot usurp the root slot and
+  // block the genuine (parentless) replacement root from being adopted.
   observe(sessionId: string) {
-    if (this.rootId === null) {
+    if (this.rootId === null && this.parents.get(sessionId) == null) {
       this.rootId = sessionId;
     }
   }
@@ -559,10 +562,13 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
       return;
     }
 
-    if (status === "idle" || busy === false) {
+    // A child going idle (via session.status idle or busy === false) must never
+    // idle the pane; only a root-scoped idle may. Child idle falls through to the
+    // running branch below, keeping the pane busy while the root still works.
+    if (!isChild && (status === "idle" || busy === false)) {
       state.activity = "idle";
       state.status = "idle";
-      state.detail = `${event.type} idle event${childSuffix}`;
+      state.detail = `${event.type} idle event`;
       return;
     }
 
