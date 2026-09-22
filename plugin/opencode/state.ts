@@ -400,6 +400,7 @@ export async function setupPanePlugin(
   let disposed = false;
   let generation = 0;
   let lastSelectedSessionId: string | null = null;
+  let pendingNavigationSessionId: string | null | undefined;
   let navigationTimer: ReturnType<typeof setInterval> | null = null;
   let reconcileTimer: ReturnType<typeof setInterval> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -408,6 +409,7 @@ export async function setupPanePlugin(
     if (disposed) return;
     disposed = true;
     generation += 1;
+    pendingNavigationSessionId = undefined;
     if (navigationTimer) clearInterval(navigationTimer);
     navigationTimer = null;
     if (reconcileTimer) clearInterval(reconcileTimer);
@@ -446,15 +448,17 @@ export async function setupPanePlugin(
     lastSelectedSessionId = sessionID;
   };
 
-  const queueRefresh = (sourceEventType: string) => {
-    void refresh(sourceEventType).catch(() => {
-      if (disposed || retryTimer) return;
-      retryTimer = setTimeout(() => {
-        retryTimer = null;
-        queueRefresh("cache.reconcile");
-      }, options.refreshRetryMs ?? 250);
-      retryTimer.unref();
-    });
+  const queueRefresh = (sourceEventType: string, onSettled?: () => void) => {
+    void refresh(sourceEventType)
+      .catch(() => {
+        if (disposed || retryTimer) return;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          queueRefresh("cache.reconcile");
+        }, options.refreshRetryMs ?? 250);
+        retryTimer.unref();
+      })
+      .finally(onSettled);
   };
 
   for (const type of EVENT_TYPES) {
@@ -489,7 +493,11 @@ export async function setupPanePlugin(
 
   navigationTimer = setInterval(() => {
     const current = selectedSession(context);
-    if (current !== lastSelectedSessionId) queueRefresh("ui.navigation");
+    if (current === lastSelectedSessionId || current === pendingNavigationSessionId) return;
+    pendingNavigationSessionId = current;
+    queueRefresh("ui.navigation", () => {
+      if (pendingNavigationSessionId === current) pendingNavigationSessionId = undefined;
+    });
   }, options.navigationPollMs ?? 100);
   navigationTimer.unref();
 

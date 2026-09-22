@@ -305,6 +305,42 @@ test("setup notices navigation, changes roots, and cleans every resource", async
   assert.equal(writes.length, count);
 });
 
+test("navigation polling coalesces refreshes while the selected session is syncing", async (t) => {
+  const fx = fixture();
+  const slowRootB = deferred();
+  const rootBSyncStarted = deferred();
+  let rootBSyncCalls = 0;
+  fx.context.data.session.sync = async (id: string) => {
+    if (id === "root-b") {
+      rootBSyncCalls += 1;
+      rootBSyncStarted.resolve();
+      await slowRootB.promise;
+    }
+  };
+  const writes: PaneState[] = [];
+  const cleanup = await setupPanePlugin(fx.context, {
+    navigationPollMs: 5,
+    reconcileMs: 1_000,
+    paneId: null,
+    resolveTarget: () => null,
+    writeState: (state) => writes.push(structuredClone(state)),
+    scheduleTmuxRefresh: () => undefined,
+  });
+  t.after(() => {
+    slowRootB.resolve();
+    cleanup();
+  });
+
+  fx.setRoute({ type: "session", sessionID: "root-b" });
+  await rootBSyncStarted.promise;
+  await new Promise((resolve) => setTimeout(resolve, 15));
+
+  assert.equal(rootBSyncCalls, 1);
+  slowRootB.resolve();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(writes.at(-1)?.sessionId, "root-b");
+});
+
 test("newer refresh generations discard stale async results", async () => {
   const fx = fixture();
   const slow = deferred();
