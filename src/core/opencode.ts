@@ -448,25 +448,31 @@ function getLatestPluginState(states: PluginStateFile[]): PluginStateFile | null
 }
 
 function getPaneBoundPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
-  return (
-    index.exactTargetMatches.get(pane.target) ?? index.exactPaneIdMatches.get(pane.paneId) ?? null
-  );
+  const paneIdState = index.exactPaneIdMatches.get(pane.paneId);
+  if (paneIdState) return paneIdState;
+
+  const targetState = index.exactTargetMatches.get(pane.target);
+  return targetState && (!targetState.paneId || targetState.paneId === pane.paneId)
+    ? targetState
+    : null;
 }
 
 function getExactPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
-  const targetState = index.exactTargetMatches.get(pane.target);
-
-  if (targetState) {
-    return targetState;
-  }
-
   const paneIdState = index.exactPaneIdMatches.get(pane.paneId);
 
   if (paneIdState) {
     return paneIdState;
   }
 
-  const states = index.statesByDirectory.get(pane.currentPath) ?? [];
+  const targetState = index.exactTargetMatches.get(pane.target);
+
+  if (targetState && (!targetState.paneId || targetState.paneId === pane.paneId)) {
+    return targetState;
+  }
+
+  const states = (index.statesByDirectory.get(pane.currentPath) ?? []).filter(
+    (state) => !state.paneId || state.paneId === pane.paneId,
+  );
 
   if (states.length === 0) {
     return null;
@@ -1283,9 +1289,10 @@ async function fetchV2ServerRuntime(
     map.endpoint,
     `/api/session/${encodeURIComponent(rootSessionId)}`,
   );
-  const familySessionIds = trustedPluginState
-    ? Array.from(new Set([rootSessionId, ...(trustedPluginState.familySessionIds ?? [])]))
-    : reconstructV2SessionFamily(await fetchV2SessionMetadata(map.endpoint), rootSessionId);
+  const familySessionIds = reconstructV2SessionFamily(
+    await fetchV2SessionMetadata(map.endpoint),
+    rootSessionId,
+  );
   let hasBlocker = false;
   let hasSelectableFamilyForm = false;
 

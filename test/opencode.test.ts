@@ -186,6 +186,63 @@ test("plugin provider matches panes by target, pane id, and directory state", as
   }
 });
 
+test("plugin provider prefers stable pane identity over a conflicting target record", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      target: "work:1.0",
+      paneId: "%99",
+      directory: "/tmp/stale-project",
+      title: "Stale target session",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 200,
+    },
+    {
+      target: "work:9.9",
+      paneId: "%1",
+      directory: "/tmp/project",
+      title: "Current pane session",
+      status: "running",
+      activity: "busy",
+      updatedAt: 100,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "plugin" });
+
+    assert.equal(summary?.runtime.status, "running");
+    assert.equal(summary?.runtime.session?.title, "Current pane session");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("plugin provider rejects a target record bound to a different pane", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      target: "work:1.0",
+      paneId: "%99",
+      directory: "/tmp/project",
+      title: "Conflicting identity",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 200,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "plugin" });
+
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.equal(summary?.runtime.match.provider, "none");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("plugin provider uses safe descendant heuristics and leaves ambiguous panes unmapped", async () => {
   const pluginStateDir = createPluginStateDir([
     {
@@ -819,6 +876,135 @@ test("V2 server ignores stale plugin family metadata for a different mapped root
   }
 });
 
+test("V2 server reconstructs a current family when plugin metadata omits a new active blocker", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/project",
+      title: "Root session",
+      sessionId: "root",
+      selectedSessionId: "root",
+      familySessionIds: ["root"],
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    calls.push(path);
+    if (path === "/api/info") return Response.json({ data: { version: "2.0.12" } });
+    if (path === "/api/session/active") return Response.json({ data: { "new-child": {} } });
+    if (path === "/api/session") {
+      return Response.json({
+        data: [
+          { id: "root", directory: "/tmp/project", title: "Root session" },
+          { id: "new-child", parentID: "root", directory: "/tmp/project" },
+        ],
+        cursor: null,
+      });
+    }
+    if (path === "/api/session/root") {
+      return Response.json({ data: { id: "root", directory: "/tmp/project" } });
+    }
+    if (path === "/api/session/new-child/permission") {
+      return Response.json({ data: [{ id: "permission-1" }] });
+    }
+    if (path.endsWith("/permission") || path.endsWith("/form")) {
+      return Response.json({ data: [] });
+    }
+    throw new Error(`unexpected fetch: ${path}`);
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": {} },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "waiting-input");
+    assert.ok(calls.includes("/api/session"));
+    assert.ok(calls.includes("/api/session/new-child/permission"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 server prefers the stable pane identity over a conflicting target root", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%99",
+      directory: "/tmp/stale-project",
+      title: "Stale root",
+      sessionId: "stale-root",
+      familySessionIds: ["stale-root"],
+      updatedAt: 200,
+    },
+    {
+      opencodeGeneration: "v2",
+      target: "work:9.9",
+      paneId: "%1",
+      directory: "/tmp/project",
+      title: "Current root",
+      sessionId: "current-root",
+      familySessionIds: ["current-root"],
+      updatedAt: 100,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    calls.push(path);
+    if (path === "/api/info") return Response.json({ data: { version: "2.0.12" } });
+    if (path === "/api/session/active") return Response.json({ data: {} });
+    if (path === "/api/session") {
+      return Response.json({
+        data: [{ id: "current-root", directory: "/tmp/project", title: "Current root" }],
+        cursor: null,
+      });
+    }
+    if (path === "/api/session/current-root") {
+      return Response.json({ data: { id: "current-root", directory: "/tmp/project" } });
+    }
+    if (path.endsWith("/permission") || path.endsWith("/form")) {
+      return Response.json({ data: [] });
+    }
+    throw new Error(`unexpected fetch: ${path}`);
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": {} },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "idle");
+    assert.equal(summary?.runtime.session?.id, "current-root");
+    assert.ok(calls.every((path) => !path.includes("stale-root")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
 test("auto does not replace a V2 server failure with a separate V1 SQLite session", async () => {
   const { databasePath } = createSqliteDataHome();
   const database = initializeSqliteDatabase(databasePath);
@@ -909,6 +1095,17 @@ test("V2 server validates API generation and aggregates exact root-family blocke
       "/api/session/root",
       { data: { id: "root", directory: "/tmp/project", title: "Root session" } },
     ],
+    [
+      "/api/session",
+      {
+        data: [
+          { id: "root", directory: "/tmp/project", title: "Root session" },
+          { id: "child-permission", parentID: "root", directory: "/tmp/project" },
+          { id: "child-question", parentID: "root", directory: "/tmp/project" },
+        ],
+        cursor: null,
+      },
+    ],
     ["/api/session/root/permission", { data: [] }],
     ["/api/session/root/form", { data: [] }],
     ["/api/session/child-permission/permission", { data: [{ id: "perm-1" }] }],
@@ -943,6 +1140,7 @@ test("V2 server validates API generation and aggregates exact root-family blocke
       "/api/info",
       "/api/session/active",
       "/api/session/root",
+      "/api/session",
       "/api/session/root/permission",
       "/api/session/root/form",
       "/api/session/child-permission/permission",
@@ -981,6 +1179,15 @@ test("V2 server classifies a selectable child form when the root session is sele
     if (path === "/api/session/active") return Response.json({ data: {} });
     if (path === "/api/session/root") {
       return Response.json({ data: { id: "root", directory: "/tmp/project" } });
+    }
+    if (path === "/api/session") {
+      return Response.json({
+        data: [
+          { id: "root", directory: "/tmp/project" },
+          { id: "child-question", parentID: "root", directory: "/tmp/project" },
+        ],
+        cursor: null,
+      });
     }
     if (path === "/api/session/child-question/form") {
       return Response.json({
