@@ -126,8 +126,51 @@ export interface CodexRuntimeDebug {
   preview: CodexPreviewDebug;
 }
 
+export interface OpenCodeRuntimeDebug {
+  detected: { generation: 1 | 2; version: string } | null;
+  detectionError: string | null;
+  plugin: {
+    stateDir: string;
+    matchedState: {
+      filePath: string;
+      matchKind: "target" | "pane-id" | "directory";
+      state: Record<string, unknown>;
+    } | null;
+    candidateStates: Array<{ filePath: string; state: Record<string, unknown> }>;
+    installation: {
+      configRoot: string;
+      status: "current" | "stale" | "missing";
+      expectedLayout: "v1-flat" | "v2-directory";
+      entrypoint: string;
+      source: string | null;
+      stale: Array<{
+        entrypoint: string;
+        source: string | null;
+        layout: "v1-flat" | "v2-directory" | "unrelated-flat";
+      }>;
+      diagnostics: string[];
+    };
+  };
+  sqlite: {
+    path: string;
+    source: "env" | "debug-paths" | "legacy";
+    schema: "v1" | "v2" | "mixed" | "unknown" | "missing";
+    tables: string[];
+    error: string | null;
+  };
+  server: {
+    configuredGeneration: "v1" | "v2" | null;
+    detectedGeneration: "v1" | "v2" | null;
+    endpoint: string | null;
+    sessionId: string | null;
+    version: string | null;
+    error: string | null;
+  };
+}
+
 export interface InspectDebugInfo {
   codex: CodexRuntimeDebug | null;
+  opencode: OpenCodeRuntimeDebug | null;
 }
 
 export interface InspectResult {

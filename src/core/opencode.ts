@@ -1,6 +1,7 @@
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from "node:fs";
+import { execFile } from "node:child_process";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 import {
   getCodexStateDir,
@@ -8,12 +9,15 @@ import {
   type CodexStateEntry,
   type CodexStateFile,
 } from "./codex.ts";
+import { detectOpenCodeVersion } from "./opencode-generation.ts";
+import { getOpenCodeConfigRoot } from "./opencode-install.ts";
 import { capturePanePreview } from "./tmux.ts";
 import { getEnvValue, getPreferredStateDir, getStateDirCandidates } from "../naming.ts";
 import type {
   CodexRuntimeDebug,
   DiscoveredPane,
   InspectDebugInfo,
+  OpenCodeRuntimeDebug,
   PaneRuntimeSummary,
   RuntimeInfo,
   RuntimeProviderName,
@@ -73,6 +77,14 @@ interface ServerStatusResult {
   info: RuntimeInfo;
 }
 
+interface V2ServerMap {
+  generation: "v2";
+  endpoint: string;
+  panes: Record<string, { sessionId?: string }>;
+}
+
+type ParsedServerMap = { generation: "v1"; endpoints: Record<string, string> } | V2ServerMap;
+
 interface HeuristicSessionMatch {
   session: SessionMatch;
   source: RuntimeSource;
@@ -86,6 +98,9 @@ interface PluginStateFile {
   directory?: string;
   paneId?: string | null;
   sessionId?: string;
+  selectedSessionId?: string;
+  familySessionIds?: string[];
+  opencodeGeneration?: "v1" | "v2";
   status?: RuntimeStatus;
   target?: string | null;
   title?: string;
@@ -99,6 +114,11 @@ interface PluginStateIndex {
   exactTargetMatches: Map<string, PluginStateFile>;
   statesByDirectory: Map<string, PluginStateFile[]>;
   states: PluginStateFile[];
+}
+
+interface PluginStateEntry {
+  filePath: string;
+  state: PluginStateFile;
 }
 
 interface CodexStateIndex {
@@ -138,9 +158,36 @@ function pickNewerCodexState(
   return current;
 }
 
-function getOpencodeDbPath(): string {
+function getLegacyOpencodeDbPath(): string {
   const dataHome = process.env.XDG_DATA_HOME ?? join(homedir(), ".local", "share");
   return join(dataHome, "opencode", "opencode.db");
+}
+
+async function getOpencodeDbPath(): Promise<{
+  path: string;
+  source: "env" | "debug-paths" | "legacy";
+}> {
+  const configured = process.env.OPENCODE_DB?.trim();
+  if (configured) return { path: configured, source: "env" };
+
+  try {
+    const output = await new Promise<string>((resolve, reject) => {
+      execFile("opencode", ["debug", "paths", "db"], { timeout: 3_000 }, (error, stdout) => {
+        if (error) reject(error);
+        else resolve(stdout.trim());
+      });
+    });
+    const lastLine = output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .at(-1);
+    if (lastLine) return { path: lastLine, source: "debug-paths" };
+  } catch {
+    // Supported V1 versions do not necessarily expose this command.
+  }
+
+  return { path: getLegacyOpencodeDbPath(), source: "legacy" };
 }
 
 export function getPluginStateDir(): string {
@@ -177,14 +224,32 @@ async function loadSqliteDatabaseConstructor(): Promise<SqliteDatabaseConstructo
 }
 
 async function openDatabase(): Promise<SqliteDatabase> {
-  const databasePath = getOpencodeDbPath();
+  const { path: databasePath } = await getOpencodeDbPath();
 
   if (!existsSync(databasePath)) {
     throw new Error(`opencode database not found at ${databasePath}`);
   }
 
   const Database = await loadSqliteDatabaseConstructor();
-  return new Database(databasePath, { readonly: true });
+  const database = new Database(databasePath, { readonly: true });
+  const tables = database
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all()
+    .map((row) => (row as { name?: unknown }).name)
+    .filter((name): name is string => typeof name === "string");
+
+  if (tables.includes("session_v2")) {
+    database.close();
+    throw new Error(
+      `OpenCode SQLite provider is unavailable for V2 schema at ${databasePath}; use plugin or V2 server state`,
+    );
+  }
+  if (!tables.includes("session") || !tables.includes("part")) {
+    database.close();
+    throw new Error(`unknown OpenCode SQLite schema at ${databasePath}`);
+  }
+
+  return database;
 }
 
 function getSessionMatch(database: SqliteDatabase, directory: string): SessionMatch | null {
@@ -302,7 +367,7 @@ function toPluginSessionMatch(state: PluginStateFile): SessionMatch | null {
   };
 }
 
-function readPluginStates(): PluginStateFile[] {
+function readPluginStateEntries(): PluginStateEntry[] {
   return getStateDirCandidates({
     env: "CODING_AGENTS_TMUX_STATE_DIR",
     subdirectory: "plugin-state",
@@ -312,19 +377,27 @@ function readPluginStates(): PluginStateFile[] {
       readdirSync(stateDir)
         .filter((entry) => entry.endsWith(".json"))
         .map((entry) => join(stateDir, entry))
-        .map((filePath) => {
+        .map((filePath): PluginStateEntry | null => {
           try {
-            return JSON.parse(readFileSync(filePath, "utf8")) as PluginStateFile;
+            return {
+              filePath,
+              state: JSON.parse(readFileSync(filePath, "utf8")) as PluginStateFile,
+            };
           } catch {
             return null;
           }
         })
-        .filter((state): state is PluginStateFile => Boolean(state?.directory)),
+        .filter((entry): entry is PluginStateEntry =>
+          Boolean(entry?.state && typeof entry.state === "object" && entry.state.directory),
+        ),
     );
 }
 
-function buildPluginStateIndex(): PluginStateIndex {
-  const states = readPluginStates();
+function readPluginStates(): PluginStateFile[] {
+  return readPluginStateEntries().map((entry) => entry.state);
+}
+
+function buildPluginStateIndex(states = readPluginStates()): PluginStateIndex {
   const exactPaneIdMatches = new Map<string, PluginStateFile>();
   const exactTargetMatches = new Map<string, PluginStateFile>();
   const statesByDirectory = new Map<string, PluginStateFile[]>();
@@ -372,6 +445,12 @@ function getLatestPluginState(states: PluginStateFile[]): PluginStateFile | null
 
     return latest;
   }, null);
+}
+
+function getPaneBoundPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
+  return (
+    index.exactTargetMatches.get(pane.target) ?? index.exactPaneIdMatches.get(pane.paneId) ?? null
+  );
 }
 
 function getExactPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
@@ -748,11 +827,11 @@ function normalizeServerMapSource(value: string | undefined): string | null {
   return getEnvValue("CODING_AGENTS_TMUX_SERVER_MAP") ?? null;
 }
 
-function parseServerMap(value: string | undefined): Record<string, string> {
+function parseServerMap(value: string | undefined): ParsedServerMap {
   const source = normalizeServerMapSource(value);
 
   if (!source) {
-    return {};
+    return { generation: "v1", endpoints: {} };
   }
 
   const raw = existsSync(source) ? readFileSync(source, "utf8") : source;
@@ -762,15 +841,38 @@ function parseServerMap(value: string | undefined): Record<string, string> {
     throw new Error("server map must be a JSON object of pane target to endpoint");
   }
 
-  const result: Record<string, string> = {};
+  const record = parsed as Record<string, unknown>;
+  if (record.generation === "v2") {
+    if (typeof record.endpoint !== "string" || !record.endpoint.trim()) {
+      throw new Error("V2 server map requires a non-empty endpoint");
+    }
+    if (!record.panes || typeof record.panes !== "object" || Array.isArray(record.panes)) {
+      throw new Error("V2 server map requires a panes object");
+    }
 
-  for (const [key, valuePart] of Object.entries(parsed)) {
+    const panes: Record<string, { sessionId?: string }> = {};
+    for (const [target, entry] of Object.entries(record.panes as Record<string, unknown>)) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+      const sessionId = (entry as { sessionId?: unknown }).sessionId;
+      panes[target] =
+        typeof sessionId === "string" && sessionId.trim() ? { sessionId: sessionId.trim() } : {};
+    }
+
+    return {
+      generation: "v2",
+      endpoint: record.endpoint.trim().replace(/\/$/, ""),
+      panes,
+    };
+  }
+
+  const endpoints: Record<string, string> = {};
+  for (const [key, valuePart] of Object.entries(record)) {
     if (typeof valuePart === "string" && valuePart.trim()) {
-      result[key] = valuePart.trim().replace(/\/$/, "");
+      endpoints[key] = valuePart.trim().replace(/\/$/, "");
     }
   }
 
-  return result;
+  return { generation: "v1", endpoints };
 }
 
 // NOTE: duplicated verbatim in plugin/coding-agents-tmux.ts — the plugin ships
@@ -956,7 +1058,22 @@ function shouldFallbackFromServer(runtime: RuntimeInfo): boolean {
 }
 
 async function fetchServerStatus(target: string, endpoint: string): Promise<ServerStatusResult> {
-  const response = await fetch(`${endpoint}/session/status`);
+  const infoResponse = await fetch(`${endpoint}/api/info`, {
+    signal: AbortSignal.timeout(3_000),
+  });
+  if (infoResponse.ok) {
+    const info = unwrapV2Data(await infoResponse.json());
+    const version = getStringCandidate(info, [["version"]]);
+    if (version?.startsWith("2.")) {
+      throw new Error(
+        `server API mismatch for ${target}: legacy V1 map points to V2 ${version}; use a typed V2 shared-server map`,
+      );
+    }
+  }
+
+  const response = await fetch(`${endpoint}/session/status`, {
+    signal: AbortSignal.timeout(3_000),
+  });
 
   if (!response.ok) {
     throw new Error(
@@ -968,70 +1085,307 @@ async function fetchServerStatus(target: string, endpoint: string): Promise<Serv
   return { endpoint, info: classifyServerPayload(endpoint, payload) };
 }
 
+function unwrapV2Data(payload: unknown): unknown {
+  return getNestedValue(payload, ["data"]) ?? payload;
+}
+
+async function fetchV2Json(endpoint: string, path: string): Promise<unknown> {
+  const response = await fetch(`${endpoint}${path}`, { signal: AbortSignal.timeout(3_000) });
+  if (!response.ok) {
+    throw new Error(
+      `V2 server request failed for ${path}: ${response.status} ${response.statusText}`,
+    );
+  }
+  return unwrapV2Data(await response.json());
+}
+
+interface V2SessionMetadata {
+  id: string;
+  parentID: string | null;
+}
+
+async function fetchV2SessionMetadata(endpoint: string): Promise<V2SessionMetadata[]> {
+  const sessions: V2SessionMetadata[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | null = null;
+
+  do {
+    const path =
+      cursor === null ? "/api/session" : `/api/session?cursor=${encodeURIComponent(cursor)}`;
+    const response = await fetch(`${endpoint}${path}`, { signal: AbortSignal.timeout(3_000) });
+    if (!response.ok) {
+      throw new Error(
+        `V2 server request failed for ${path}: ${response.status} ${response.statusText}`,
+      );
+    }
+    const payload = (await response.json()) as unknown;
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      !Array.isArray((payload as { data?: unknown }).data)
+    ) {
+      throw new Error(
+        "V2 session family metadata is incomplete: /api/session data is not an array",
+      );
+    }
+    for (const value of (payload as { data: unknown[] }).data) {
+      if (!value || typeof value !== "object") {
+        throw new Error("V2 session family metadata is incomplete: session entry is not an object");
+      }
+      const record = value as Record<string, unknown>;
+      if (typeof record.id !== "string" || record.id.length === 0) {
+        throw new Error("V2 session family metadata is incomplete: session id is missing");
+      }
+      if (
+        record.parentID !== undefined &&
+        record.parentID !== null &&
+        typeof record.parentID !== "string"
+      ) {
+        throw new Error(
+          `V2 session family metadata is incomplete for ${record.id}: invalid parentID`,
+        );
+      }
+      sessions.push({
+        id: record.id,
+        parentID: typeof record.parentID === "string" ? record.parentID : null,
+      });
+    }
+
+    const next = (payload as { cursor?: unknown }).cursor;
+    if (next === undefined || next === null || next === "") {
+      cursor = null;
+    } else if (typeof next !== "string" || seenCursors.has(next)) {
+      throw new Error("V2 session family metadata is ambiguous: invalid or repeated cursor");
+    } else {
+      seenCursors.add(next);
+      cursor = next;
+    }
+  } while (cursor !== null);
+
+  return sessions;
+}
+
+function reconstructV2SessionFamily(
+  sessions: V2SessionMetadata[],
+  rootSessionId: string,
+): string[] {
+  const byId = new Map<string, V2SessionMetadata>();
+  for (const session of sessions) {
+    if (byId.has(session.id)) {
+      throw new Error(`V2 session family metadata is ambiguous: duplicate session ${session.id}`);
+    }
+    byId.set(session.id, session);
+  }
+  const root = byId.get(rootSessionId);
+  if (!root) {
+    throw new Error(
+      `V2 session family metadata is incomplete: mapped root ${rootSessionId} is absent from /api/session`,
+    );
+  }
+  if (root.parentID !== null) {
+    throw new Error(
+      `V2 session family metadata is ambiguous: mapped root ${rootSessionId} has parent ${root.parentID}`,
+    );
+  }
+  for (const session of sessions) {
+    if (session.parentID !== null && !byId.has(session.parentID)) {
+      throw new Error(
+        `V2 session family metadata is incomplete: parent ${session.parentID} for ${session.id} is absent`,
+      );
+    }
+    const ancestors = new Set<string>();
+    let current: V2SessionMetadata | undefined = session;
+    while (current && current.parentID !== null) {
+      if (ancestors.has(current.id)) {
+        throw new Error(`V2 session family metadata is ambiguous: cycle includes ${current.id}`);
+      }
+      ancestors.add(current.id);
+      current = byId.get(current.parentID);
+    }
+  }
+
+  const family = [rootSessionId];
+  for (let index = 0; index < family.length; index += 1) {
+    const parentID = family[index];
+    for (const session of sessions) {
+      if (session.parentID === parentID) family.push(session.id);
+    }
+  }
+  return family;
+}
+
+function hasSelectableForm(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(hasSelectableForm);
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (record.type === "select" || record.type === "multi-select") return true;
+  if (Array.isArray(record.options) && record.options.length > 0) return true;
+  return Object.values(record).some(hasSelectableForm);
+}
+
+function toV2SessionMatch(
+  payload: unknown,
+  rootSessionId: string,
+  pluginState: PluginStateFile | null,
+): SessionMatch {
+  const record = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
+  const time =
+    record.time && typeof record.time === "object" ? (record.time as Record<string, unknown>) : {};
+  return {
+    id: typeof record.id === "string" ? record.id : rootSessionId,
+    directory:
+      typeof record.directory === "string"
+        ? record.directory
+        : (pluginState?.directory ?? "unknown"),
+    title: typeof record.title === "string" ? record.title : (pluginState?.title ?? rootSessionId),
+    timeUpdated:
+      typeof record.timeUpdated === "number"
+        ? record.timeUpdated
+        : typeof time.updated === "number"
+          ? time.updated
+          : (pluginState?.updatedAt ?? Date.now()),
+  };
+}
+
+async function fetchV2ServerRuntime(
+  target: string,
+  map: V2ServerMap,
+  pluginState: PluginStateFile | null,
+): Promise<RuntimeInfo> {
+  const paneMapping = map.panes[target];
+  if (!paneMapping) {
+    throw new Error(`no V2 server pane mapping configured for ${target}`);
+  }
+
+  const rootSessionId =
+    paneMapping.sessionId ||
+    (pluginState?.opencodeGeneration === "v2" ? pluginState.sessionId : undefined);
+  if (!rootSessionId) {
+    throw new Error(
+      `V2 server pane mapping for ${target} requires sessionId or exact plugin root state`,
+    );
+  }
+  const trustedPluginState =
+    pluginState?.opencodeGeneration === "v2" && pluginState.sessionId === rootSessionId
+      ? pluginState
+      : null;
+
+  const info = await fetchV2Json(map.endpoint, "/api/info");
+  const version = getStringCandidate(info, [["version"]]);
+  if (!version?.startsWith("2.")) {
+    throw new Error(
+      `server API mismatch for ${target}: expected V2 from /api/info, received ${version ?? "unknown"}`,
+    );
+  }
+
+  const active = await fetchV2Json(map.endpoint, "/api/session/active");
+  const rootPayload = await fetchV2Json(
+    map.endpoint,
+    `/api/session/${encodeURIComponent(rootSessionId)}`,
+  );
+  const familySessionIds = trustedPluginState
+    ? Array.from(new Set([rootSessionId, ...(trustedPluginState.familySessionIds ?? [])]))
+    : reconstructV2SessionFamily(await fetchV2SessionMetadata(map.endpoint), rootSessionId);
+  let hasBlocker = false;
+  let hasSelectableFamilyForm = false;
+
+  for (const sessionId of familySessionIds) {
+    const encoded = encodeURIComponent(sessionId);
+    const permissions = await fetchV2Json(map.endpoint, `/api/session/${encoded}/permission`);
+    const forms = await fetchV2Json(map.endpoint, `/api/session/${encoded}/form`);
+    if (Array.isArray(permissions) && permissions.length > 0) hasBlocker = true;
+    if (Array.isArray(forms) && forms.length > 0) {
+      hasBlocker = true;
+      if (hasSelectableForm(forms)) hasSelectableFamilyForm = true;
+    }
+  }
+
+  const session = toV2SessionMatch(rootPayload, rootSessionId, trustedPluginState);
+  const activeRecord =
+    active && typeof active === "object" && !Array.isArray(active)
+      ? (active as Record<string, unknown>)
+      : {};
+  const familyActive = familySessionIds.some((sessionId) => sessionId in activeRecord);
+  const status: RuntimeStatus = hasSelectableFamilyForm
+    ? "waiting-question"
+    : hasBlocker
+      ? "waiting-input"
+      : familyActive
+        ? "running"
+        : "idle";
+
+  return createRuntimeInfo({
+    activity: status === "idle" ? "idle" : "busy",
+    status,
+    source: "server-explicit",
+    strategy: "target-map",
+    provider: "server",
+    heuristic: false,
+    session,
+    detail: `OpenCode V2 ${version} shared-server state from ${map.endpoint}`,
+  });
+}
+
+function isServerApiMismatch(error: unknown): boolean {
+  return error instanceof Error && /server API mismatch/i.test(error.message);
+}
+
+function serverFailureRuntime(error: unknown): RuntimeInfo {
+  return createRuntimeInfo({
+    activity: "unknown",
+    status: "unknown",
+    source: "unmapped",
+    strategy: "unmapped",
+    provider: "none",
+    heuristic: false,
+    session: null,
+    detail: error instanceof Error ? error.message : String(error),
+  });
+}
+
 async function attachRuntimeWithServerMap(
   panes: DiscoveredPane[],
   options: RuntimeProviderOptions,
   fallbackToSqlite: boolean,
 ): Promise<PaneRuntimeSummary[]> {
-  const sqliteFallback = fallbackToSqlite ? await attachRuntimeWithSqlite(panes) : null;
   const serverMap = parseServerMap(options.serverMap);
+  const pluginIndex = serverMap.generation === "v2" ? buildPluginStateIndex() : null;
+  const sqliteFallback =
+    fallbackToSqlite && serverMap.generation === "v1" ? await attachRuntimeWithSqlite(panes) : null;
 
-  const results = await Promise.all(
+  return Promise.all(
     panes.map(async (entry, index) => {
-      const endpoint = serverMap[entry.pane.target];
-
-      if (!endpoint) {
-        if (sqliteFallback) {
-          return sqliteFallback[index] ?? { ...entry, runtime: classifyRuntime(null, null, null) };
-        }
-
-        return {
-          ...entry,
-          runtime: createRuntimeInfo({
-            activity: "unknown",
-            status: "unknown",
-            source: "unmapped",
-            strategy: "unmapped",
-            provider: "none",
-            heuristic: false,
-            session: null,
-            detail: `no server endpoint configured for ${entry.pane.target}`,
-          }),
-        };
-      }
-
       try {
-        const result = await fetchServerStatus(entry.pane.target, endpoint);
-
-        if (sqliteFallback && shouldFallbackFromServer(result.info)) {
-          return sqliteFallback[index] ?? { ...entry, runtime: classifyRuntime(null, null, null) };
+        let runtime: RuntimeInfo;
+        if (serverMap.generation === "v2") {
+          runtime = await fetchV2ServerRuntime(
+            entry.pane.target,
+            serverMap,
+            pluginIndex ? getPaneBoundPluginState(pluginIndex, entry.pane) : null,
+          );
+        } else {
+          const endpoint = serverMap.endpoints[entry.pane.target];
+          if (!endpoint) throw new Error(`no server endpoint configured for ${entry.pane.target}`);
+          runtime = (await fetchServerStatus(entry.pane.target, endpoint)).info;
         }
 
-        return { ...entry, runtime: result.info };
+        if (sqliteFallback && shouldFallbackFromServer(runtime)) {
+          return (
+            sqliteFallback[index] ?? { ...entry, runtime: serverFailureRuntime("no fallback") }
+          );
+        }
+        return { ...entry, runtime };
       } catch (error) {
-        if (sqliteFallback) {
-          return sqliteFallback[index] ?? { ...entry, runtime: classifyRuntime(null, null, null) };
+        if (isServerApiMismatch(error)) {
+          return { ...entry, runtime: serverFailureRuntime(error) };
         }
-
-        const message = error instanceof Error ? error.message : String(error);
-        return {
-          ...entry,
-          runtime: createRuntimeInfo({
-            activity: "unknown",
-            status: "unknown",
-            source: "unmapped",
-            strategy: "unmapped",
-            provider: "none",
-            heuristic: false,
-            session: null,
-            detail: message,
-          }),
-        };
+        if (sqliteFallback) {
+          return sqliteFallback[index] ?? { ...entry, runtime: serverFailureRuntime(error) };
+        }
+        return { ...entry, runtime: serverFailureRuntime(error) };
       }
     }),
   );
-
-  return results;
 }
 
 function normalizeProvider(provider: RuntimeProviderName | undefined): RuntimeProviderName {
@@ -1395,9 +1749,331 @@ function buildCodexStateDebugMatch(
   };
 }
 
-export async function buildInspectDebugInfo(pane: DiscoveredPane): Promise<InspectDebugInfo> {
+function debugPathExists(path: string): boolean {
+  try {
+    lstatSync(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+function resolvePluginSource(path: string, directoryLayout: boolean): string | null {
+  if (!debugPathExists(path)) return null;
+  if (!lstatSync(path).isSymbolicLink()) return directoryLayout ? join(path, "index.ts") : path;
+  const target = resolve(dirname(path), readlinkSync(path));
+  return directoryLayout ? join(target, "index.ts") : target;
+}
+
+function buildOpenCodeInstallDebug(
+  generation: 1 | 2 | undefined,
+  pluginStateLoaded: boolean,
+): OpenCodeRuntimeDebug["plugin"]["installation"] {
+  const configRoot = getOpenCodeConfigRoot();
+  const pluginRoot = join(configRoot, "opencode", "plugins");
+  const v1Path = join(pluginRoot, "coding-agents-tmux.ts");
+  const v2Path = join(pluginRoot, "coding-agents-tmux");
+  const unrelatedPath = join(pluginRoot, "opencode-tmux.ts");
+  const expectedLayout = generation === 1 ? "v1-flat" : "v2-directory";
+  const expectedPath = generation === 1 ? v1Path : v2Path;
+  const entrypoint = generation === 1 ? expectedPath : join(expectedPath, "index.ts");
+  const current =
+    generation === 1
+      ? debugPathExists(expectedPath)
+      : debugPathExists(expectedPath) && debugPathExists(entrypoint);
+  const stale: OpenCodeRuntimeDebug["plugin"]["installation"]["stale"] = [];
+
+  const stalePath = generation === 1 ? v2Path : v1Path;
+  if (debugPathExists(stalePath)) {
+    const directoryLayout = generation === 1;
+    stale.push({
+      entrypoint: directoryLayout ? join(stalePath, "index.ts") : stalePath,
+      source: resolvePluginSource(stalePath, directoryLayout),
+      layout: generation === 1 ? "v2-directory" : "v1-flat",
+    });
+  }
+  if (debugPathExists(unrelatedPath)) {
+    stale.push({
+      entrypoint: unrelatedPath,
+      source: resolvePluginSource(unrelatedPath, false),
+      layout: "unrelated-flat",
+    });
+  }
+
+  const status = current ? "current" : stale.length > 0 ? "stale" : "missing";
+  const diagnostics: string[] = [];
+  if (status === "missing") {
+    diagnostics.push("OpenCode plugin is missing; run coding-agents-tmux install-opencode");
+  } else if (status === "stale") {
+    diagnostics.push(
+      `Only stale OpenCode plugin layout(s) are installed; run coding-agents-tmux install-opencode for ${expectedLayout}`,
+    );
+  }
+  if (stale.length > 0) {
+    diagnostics.push(
+      `Stale OpenCode plugin entries found: ${stale.map((entry) => entry.entrypoint).join(", ")}`,
+    );
+  }
+  if (generation === 2 && current && !pluginStateLoaded) {
+    diagnostics.push(
+      "V2 plugin appears not loaded in this TUI; restart OpenCode so the TUI loads coding-agents-tmux",
+    );
+  }
+
+  return {
+    configRoot,
+    status,
+    expectedLayout,
+    entrypoint,
+    source: current ? resolvePluginSource(expectedPath, generation !== 1) : null,
+    stale,
+    diagnostics,
+  };
+}
+
+async function buildOpenCodeSqliteDebug(): Promise<OpenCodeRuntimeDebug["sqlite"]> {
+  const resolved = await getOpencodeDbPath();
+  if (!existsSync(resolved.path)) {
+    return {
+      ...resolved,
+      schema: "missing",
+      tables: [],
+      error: `database not found at ${resolved.path}`,
+    };
+  }
+
+  let database: SqliteDatabase | null = null;
+  try {
+    const Database = await loadSqliteDatabaseConstructor();
+    database = new Database(resolved.path, { readonly: true });
+    const tables = database
+      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
+      .all()
+      .map((row) => (row as { name?: unknown }).name)
+      .filter((name): name is string => typeof name === "string");
+    const hasV1 = tables.includes("session") && tables.includes("part");
+    const hasV2 = tables.includes("session_v2");
+    const schema = hasV1 && hasV2 ? "mixed" : hasV2 ? "v2" : hasV1 ? "v1" : "unknown";
+    return { ...resolved, schema, tables, error: null };
+  } catch (error) {
+    return {
+      ...resolved,
+      schema: "unknown",
+      tables: [],
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    database?.close();
+  }
+}
+
+async function buildOpenCodeServerDebug(
+  pane: TmuxPane,
+  options: RuntimeProviderOptions,
+  pluginState: PluginStateFile | null,
+): Promise<OpenCodeRuntimeDebug["server"]> {
+  const source = normalizeServerMapSource(options.serverMap);
+  if (!source) {
+    return {
+      configuredGeneration: null,
+      detectedGeneration: null,
+      endpoint: null,
+      sessionId: null,
+      version: null,
+      error: null,
+    };
+  }
+
+  try {
+    const map = parseServerMap(options.serverMap);
+    if (map.generation === "v1") {
+      const endpoint = map.endpoints[pane.target] ?? null;
+      if (!endpoint) {
+        return {
+          configuredGeneration: "v1",
+          detectedGeneration: null,
+          endpoint: null,
+          sessionId: null,
+          version: null,
+          error: `no server endpoint configured for ${pane.target}`,
+        };
+      }
+      try {
+        const response = await fetch(`${endpoint}/api/info`, {
+          signal: AbortSignal.timeout(3_000),
+        });
+        if (!response.ok) {
+          return {
+            configuredGeneration: "v1",
+            detectedGeneration: "v1",
+            endpoint,
+            sessionId: null,
+            version: null,
+            error: null,
+          };
+        }
+        const info = unwrapV2Data(await response.json());
+        const version = getStringCandidate(info, [["version"]]);
+        const detectedGeneration = version?.startsWith("2.")
+          ? "v2"
+          : version?.startsWith("1.")
+            ? "v1"
+            : null;
+        return {
+          configuredGeneration: "v1",
+          detectedGeneration,
+          endpoint,
+          sessionId: null,
+          version,
+          error:
+            detectedGeneration === "v2"
+              ? `server API mismatch: legacy V1 map points to V2 ${version}`
+              : null,
+        };
+      } catch (error) {
+        return {
+          configuredGeneration: "v1",
+          detectedGeneration: null,
+          endpoint,
+          sessionId: null,
+          version: null,
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+
+    const endpoint = map.endpoint;
+    const paneMapping = map.panes[pane.target];
+    const trustedPluginState = pluginState?.opencodeGeneration === "v2" ? pluginState : null;
+    const sessionId = paneMapping?.sessionId ?? trustedPluginState?.sessionId ?? null;
+    if (!paneMapping) {
+      return {
+        configuredGeneration: "v2",
+        detectedGeneration: null,
+        endpoint,
+        sessionId: null,
+        version: null,
+        error: `no V2 server pane mapping configured for ${pane.target}`,
+      };
+    }
+    if (!sessionId) {
+      return {
+        configuredGeneration: "v2",
+        detectedGeneration: null,
+        endpoint,
+        sessionId: null,
+        version: null,
+        error: `V2 server pane mapping for ${pane.target} requires sessionId or exact plugin root state`,
+      };
+    }
+    try {
+      const info = await fetchV2Json(endpoint, "/api/info");
+      const version = getStringCandidate(info, [["version"]]);
+      const detectedGeneration = version?.startsWith("2.")
+        ? "v2"
+        : version?.startsWith("1.")
+          ? "v1"
+          : null;
+      return {
+        configuredGeneration: "v2",
+        detectedGeneration,
+        endpoint,
+        sessionId,
+        version,
+        error:
+          detectedGeneration === "v2"
+            ? null
+            : `server API mismatch: configured V2 but /api/info reported ${version ?? "unknown"}`,
+      };
+    } catch (error) {
+      return {
+        configuredGeneration: "v2",
+        detectedGeneration: null,
+        endpoint,
+        sessionId,
+        version: null,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  } catch (error) {
+    return {
+      configuredGeneration: null,
+      detectedGeneration: null,
+      endpoint: null,
+      sessionId: null,
+      version: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+async function buildOpenCodeDebug(
+  pane: DiscoveredPane,
+  options: RuntimeProviderOptions,
+): Promise<OpenCodeRuntimeDebug> {
+  const entries = readPluginStateEntries();
+  const index = buildPluginStateIndex(entries.map((entry) => entry.state));
+  const matchedState = getExactPluginState(index, pane.pane);
+  const paneBoundState = getPaneBoundPluginState(index, pane.pane);
+  const matchedEntry = matchedState
+    ? (entries.find((entry) => entry.state === matchedState) ?? null)
+    : null;
+  const candidateEntries = entries.filter(
+    (entry) =>
+      entry.state.target === pane.pane.target ||
+      entry.state.paneId === pane.pane.paneId ||
+      entry.state.directory === pane.pane.currentPath,
+  );
+  let detected: OpenCodeRuntimeDebug["detected"] = null;
+  let detectionError: string | null = null;
+  try {
+    detected = await detectOpenCodeVersion({ timeoutMs: 3_000 });
+  } catch (error) {
+    detectionError = error instanceof Error ? error.message : String(error);
+  }
+
+  const matchKind = matchedState
+    ? matchedState.target === pane.pane.target
+      ? "target"
+      : matchedState.paneId === pane.pane.paneId
+        ? "pane-id"
+        : "directory"
+    : null;
+
+  return {
+    detected,
+    detectionError,
+    plugin: {
+      stateDir: getPluginStateDir(),
+      matchedState:
+        matchedEntry && matchKind
+          ? { filePath: matchedEntry.filePath, matchKind, state: { ...matchedEntry.state } }
+          : null,
+      candidateStates: candidateEntries.map((entry) => ({
+        filePath: entry.filePath,
+        state: { ...entry.state },
+      })),
+      installation: buildOpenCodeInstallDebug(
+        detected?.generation,
+        paneBoundState?.opencodeGeneration === "v2",
+      ),
+    },
+    sqlite: await buildOpenCodeSqliteDebug(),
+    server: await buildOpenCodeServerDebug(pane.pane, options, paneBoundState),
+  };
+}
+
+export async function buildInspectDebugInfo(
+  pane: DiscoveredPane,
+  options: RuntimeProviderOptions = {},
+): Promise<InspectDebugInfo> {
+  if (pane.detection.agent === "opencode") {
+    return { codex: null, opencode: await buildOpenCodeDebug(pane, options) };
+  }
+
   if (pane.detection.agent !== "codex") {
-    return { codex: null };
+    return { codex: null, opencode: null };
   }
 
   const entries = readCodexStateEntries();
@@ -1449,7 +2125,7 @@ export async function buildInspectDebugInfo(pane: DiscoveredPane): Promise<Inspe
     preview,
   };
 
-  return { codex };
+  return { codex, opencode: null };
 }
 
 async function classifyCodexPaneRuntime(
@@ -1560,14 +2236,13 @@ export function buildServerMapTemplate(
     basePort?: number;
     hostname?: string;
   } = {},
-): Record<string, string> {
+): V2ServerMap {
   const hostname = options.hostname ?? "127.0.0.1";
-  const basePort = options.basePort;
+  const port = options.basePort ?? 4096;
 
-  return Object.fromEntries(
-    panes.map((pane, index) => {
-      const port = basePort === undefined ? 0 : basePort + index;
-      return [pane.target, `http://${hostname}:${port}`];
-    }),
-  );
+  return {
+    generation: "v2",
+    endpoint: `http://${hostname}:${port}`,
+    panes: Object.fromEntries(panes.map((pane) => [pane.target, { sessionId: "" }])),
+  };
 }

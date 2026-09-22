@@ -42,6 +42,21 @@ async function loadPlugin() {
   return import(`../plugin/coding-agents-tmux.ts?test=${Math.random()}`);
 }
 
+test("V1 plugin exports the stable default object entrypoint", async () => {
+  const module = await loadPlugin();
+
+  assert.equal(module.default.id, "coding-agents-tmux");
+  assert.equal(module.default.server, module.CodingAgentsTmuxPlugin);
+});
+
+test("package index is accepted by V2 while retaining the V1 server callback", async () => {
+  const module = await import(`../plugin/opencode/index.ts?test=${Math.random()}`);
+
+  assert.equal(module.default.id, "coding-agents-tmux");
+  assert.equal(typeof module.default.setup, "function");
+  assert.equal(module.default.server, module.CodingAgentsTmuxPlugin);
+});
+
 interface TestEvent {
   type: string;
   properties?: Record<string, unknown>;
@@ -49,8 +64,8 @@ interface TestEvent {
 }
 
 async function startPlugin() {
-  const { CodingAgentsTmuxPlugin } = await loadPlugin();
-  return CodingAgentsTmuxPlugin({
+  const { default: plugin } = await loadPlugin();
+  return plugin.server({
     directory: "/tmp/project",
     project: { name: "Project" },
     client: { app: { log: async () => null } },

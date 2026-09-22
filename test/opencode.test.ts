@@ -1,11 +1,15 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { buildServerMapTemplate, describeServerMapInput } from "../src/core/opencode.ts";
+import {
+  buildInspectDebugInfo,
+  buildServerMapTemplate,
+  describeServerMapInput,
+} from "../src/core/opencode.ts";
 import { attachRuntimeToPanes, getRuntimeProviderHelpText } from "../src/core/runtime.ts";
 import type { DiscoveredPane, PaneRuntimeSummary, TmuxPane } from "../src/types.ts";
 
@@ -226,8 +230,11 @@ test("plugin provider uses safe descendant heuristics and leaves ambiguous panes
 });
 
 test("sqlite provider classifies exact matches across idle, waiting, running, and unfinished steps", async () => {
-  const { dataHome, databasePath } = createSqliteDataHome();
-  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, CODING_AGENTS_TMUX_STATE_DIR: undefined });
+  const { databasePath } = createSqliteDataHome();
+  const restoreEnv = setEnv({
+    OPENCODE_DB: databasePath,
+    CODING_AGENTS_TMUX_STATE_DIR: undefined,
+  });
   const database = initializeSqliteDatabase(databasePath);
 
   try {
@@ -332,8 +339,11 @@ test("sqlite provider classifies exact matches across idle, waiting, running, an
 });
 
 test("sqlite provider uses descendant heuristics only when they are unambiguous", async () => {
-  const { dataHome, databasePath } = createSqliteDataHome();
-  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, CODING_AGENTS_TMUX_STATE_DIR: undefined });
+  const { databasePath } = createSqliteDataHome();
+  const restoreEnv = setEnv({
+    OPENCODE_DB: databasePath,
+    CODING_AGENTS_TMUX_STATE_DIR: undefined,
+  });
   const database = initializeSqliteDatabase(databasePath);
 
   try {
@@ -423,6 +433,9 @@ test("server provider parses inline and file-backed maps and normalizes endpoint
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const key = String(input);
+    if (key.endsWith("/api/info")) {
+      return new Response(null, { status: 404, statusText: "Not Found" });
+    }
     const payload = responses.get(key);
 
     if (payload === undefined) {
@@ -487,11 +500,17 @@ test("runtime provider helpers expose provider docs, template output, and valida
   const helpText = getRuntimeProviderHelpText();
 
   assert.deepEqual(template, {
-    "work:1.0": "http://127.0.0.2:4096",
-    "work:1.1": "http://127.0.0.2:4097",
+    generation: "v2",
+    endpoint: "http://127.0.0.2:4096",
+    panes: {
+      "work:1.0": { sessionId: "" },
+      "work:1.1": { sessionId: "" },
+    },
   });
   assert.match(helpText, /Runtime providers:/);
-  assert.match(helpText, /plugin  Use opencode plugin state files only/);
+  assert.match(helpText, /plugin  Use pane-local OpenCode plugin state files only/);
+  assert.match(helpText, /V2 uses one shared endpoint plus exact pane-to-root-session mappings/);
+  assert.match(helpText, /SQLite is V1-only and reports V2 schemas as unavailable/);
   assert.match(helpText, /Override with CODING_AGENTS_TMUX_STATE_DIR\./);
   assert.match(helpText, /Generate hooks\.json with: coding-agents-tmux codex-hooks-template/);
   assert.match(helpText, /CODING_AGENTS_TMUX_SERVER_MAP with the same value/);
@@ -592,7 +611,11 @@ test("codex panes use a coarse command-backed runtime classification", async () 
 
 test("sqlite provider reports a missing database as unknown runtime detail", async () => {
   const dataHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-missing-db-"));
-  const restoreEnv = setEnv({ XDG_DATA_HOME: dataHome, CODING_AGENTS_TMUX_STATE_DIR: undefined });
+  const databasePath = join(dataHome, "opencode", "opencode.db");
+  const restoreEnv = setEnv({
+    OPENCODE_DB: databasePath,
+    CODING_AGENTS_TMUX_STATE_DIR: undefined,
+  });
 
   try {
     const summaries = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "sqlite" });
@@ -636,16 +659,20 @@ test("auto provider keeps plugin matches and falls back to sqlite when server st
       updatedAt: 100,
     },
   ]);
-  const { dataHome, databasePath } = createSqliteDataHome();
+  const { databasePath } = createSqliteDataHome();
   const restoreEnv = setEnv({
     CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
-    XDG_DATA_HOME: dataHome,
+    OPENCODE_DB: databasePath,
   });
   const database = initializeSqliteDatabase(databasePath);
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = async (input) => {
     const url = String(input);
+
+    if (url === "http://127.0.0.1:4096/api/info") {
+      return new Response(null, { status: 404, statusText: "Not Found" });
+    }
 
     if (url === "http://127.0.0.1:4096/session/status") {
       return new Response(JSON.stringify({}), {
@@ -691,6 +718,643 @@ test("auto provider keeps plugin matches and falls back to sqlite when server st
     assert.equal(getRuntime(getSummary(summaries, 1)).status, "waiting-input");
   } finally {
     database.close();
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("plugin state reader ignores JSON null entries", async () => {
+  const pluginStateDir = createPluginStateDir([null as unknown as Record<string, unknown>]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "plugin" });
+    assert.equal(summary?.runtime.status, "unknown");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("SQLite path discovery uses bounded OpenCode debug output even when XDG is configured", async () => {
+  const root = mkdtempSync(join(tmpdir(), "coding-agents-tmux-debug-path-"));
+  const databasePath = join(root, "channel.db");
+  const database = initializeSqliteDatabase(databasePath);
+  insertSession(database, {
+    id: "debug-path-session",
+    directory: "/tmp/project",
+    title: "Debug Path Session",
+    timeUpdated: Date.now(),
+  });
+  database.close();
+  const binDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-debug-path-bin-"));
+  const executable = join(binDir, "opencode");
+  writeFileSync(executable, `#!/bin/sh\nprintf '%s\\n' '${databasePath}'\n`, "utf8");
+  chmodSync(executable, 0o755);
+  const restoreEnv = setEnv({
+    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    OPENCODE_DB: undefined,
+    XDG_DATA_HOME: join(root, "wrong-xdg"),
+  });
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "sqlite" });
+    assert.equal(summary?.runtime.status, "idle");
+    assert.equal(summary?.runtime.session?.id, "debug-path-session");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("V2 server ignores stale plugin family metadata for a different mapped root", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      directory: "/tmp/project",
+      title: "Old root",
+      sessionId: "old-root",
+      selectedSessionId: "old-child",
+      familySessionIds: ["old-root", "old-child"],
+      status: "idle",
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    calls.push(path);
+    if (path === "/api/info") return Response.json({ data: { version: "2.0.12" } });
+    if (path === "/api/session/active") return Response.json({ data: {} });
+    if (path === "/api/session") {
+      return Response.json({
+        data: [{ id: "new-root", directory: "/tmp/project", title: "New" }],
+        cursor: null,
+      });
+    }
+    if (path === "/api/session/new-root") {
+      return Response.json({ data: { id: "new-root", directory: "/tmp/project", title: "New" } });
+    }
+    if (path.endsWith("/permission") || path.endsWith("/form")) {
+      return Response.json({ data: [] });
+    }
+    throw new Error(`unexpected fetch: ${path}`);
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": { sessionId: "new-root" } },
+      }),
+    });
+    assert.equal(summary?.runtime.status, "idle");
+    assert.equal(summary?.runtime.session?.id, "new-root");
+    assert.ok(calls.every((path) => !path.includes("old-")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("auto does not replace a V2 server failure with a separate V1 SQLite session", async () => {
+  const { databasePath } = createSqliteDataHome();
+  const database = initializeSqliteDatabase(databasePath);
+  insertSession(database, {
+    id: "legacy",
+    directory: "/tmp/project",
+    title: "Legacy",
+    timeUpdated: Date.now(),
+  });
+  database.close();
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: mkdtempSync(join(tmpdir(), "empty-plugin-state-")),
+    OPENCODE_DB: databasePath,
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error("V2 server unavailable");
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "auto",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": { sessionId: "root" } },
+      }),
+    });
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.match(summary?.runtime.detail ?? "", /V2 server unavailable/);
+    assert.notEqual(summary?.runtime.session?.id, "legacy");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("sqlite provider treats OPENCODE_DB V2 mixed schemas as unavailable without querying V1 tables", async () => {
+  const root = mkdtempSync(join(tmpdir(), "coding-agents-tmux-v2-db-"));
+  const databasePath = join(root, "custom.db");
+  const database = initializeSqliteDatabase(databasePath);
+  database.exec("CREATE TABLE session_v2 (id TEXT PRIMARY KEY, directory TEXT NOT NULL)");
+  insertSession(database, {
+    id: "stale-v1-row",
+    directory: "/tmp/project",
+    title: "Must Not Be Used",
+    timeUpdated: Date.now(),
+  });
+  database.close();
+  const restoreEnv = setEnv({ OPENCODE_DB: databasePath, CODING_AGENTS_TMUX_STATE_DIR: undefined });
+
+  try {
+    const summaries = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "sqlite" });
+    const runtime = getRuntime(getSummary(summaries, 0));
+
+    assert.equal(runtime.status, "unknown");
+    assert.equal(runtime.match.provider, "none");
+    assert.match(runtime.detail, /SQLite.*unavailable.*V2/i);
+    assert.doesNotMatch(runtime.detail, /Must Not Be Used/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("V2 server validates API generation and aggregates exact root-family blockers", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/project",
+      title: "Root session",
+      sessionId: "root",
+      selectedSessionId: "child-question",
+      familySessionIds: ["root", "child-permission", "child-question"],
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const responses = new Map<string, unknown>([
+    ["/api/info", { data: { version: "2.0.12" } }],
+    ["/api/session/active", { data: { root: {}, "child-permission": {} } }],
+    [
+      "/api/session/root",
+      { data: { id: "root", directory: "/tmp/project", title: "Root session" } },
+    ],
+    ["/api/session/root/permission", { data: [] }],
+    ["/api/session/root/form", { data: [] }],
+    ["/api/session/child-permission/permission", { data: [{ id: "perm-1" }] }],
+    ["/api/session/child-permission/form", { data: [] }],
+    ["/api/session/child-question/permission", { data: [] }],
+    [
+      "/api/session/child-question/form",
+      { data: [{ id: "form-1", fields: [{ type: "select", options: [{ label: "A" }] }] }] },
+    ],
+  ]);
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    const payload = responses.get(url.pathname);
+    if (payload === undefined) throw new Error(`unexpected fetch: ${url.pathname}`);
+    return Response.json(payload);
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": {} },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "waiting-question");
+    assert.equal(summary?.runtime.session?.id, "root");
+    assert.deepEqual(calls, [
+      "/api/info",
+      "/api/session/active",
+      "/api/session/root",
+      "/api/session/root/permission",
+      "/api/session/root/form",
+      "/api/session/child-permission/permission",
+      "/api/session/child-permission/form",
+      "/api/session/child-question/permission",
+      "/api/session/child-question/form",
+    ]);
+    assert.ok(!calls.includes("/session/status"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 server classifies a selectable child form when the root session is selected", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/project",
+      title: "Root session",
+      sessionId: "root",
+      selectedSessionId: "root",
+      familySessionIds: ["root", "child-question"],
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    if (path === "/api/info") return Response.json({ data: { version: "2.0.12" } });
+    if (path === "/api/session/active") return Response.json({ data: {} });
+    if (path === "/api/session/root") {
+      return Response.json({ data: { id: "root", directory: "/tmp/project" } });
+    }
+    if (path === "/api/session/child-question/form") {
+      return Response.json({
+        data: [{ id: "form-1", fields: [{ type: "select", options: [{ label: "A" }] }] }],
+      });
+    }
+    if (path.endsWith("/permission") || path.endsWith("/form")) {
+      return Response.json({ data: [] });
+    }
+    throw new Error(`unexpected fetch: ${path}`);
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": {} },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "waiting-question");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 server discovers active child sessions from the stable session listing without plugin state", async () => {
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: mkdtempSync(join(tmpdir(), "empty-plugin-state-")),
+  });
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  const responses = new Map<string, unknown>([
+    ["/api/info", { data: { version: "2.0.12" } }],
+    ["/api/session/active", { data: { "grandchild-running": {} } }],
+    [
+      "/api/session",
+      {
+        data: [
+          { id: "root", directory: "/tmp/project", title: "Root" },
+          { id: "child", parentID: "root", directory: "/tmp/project" },
+          { id: "grandchild-running", parentID: "child", directory: "/tmp/project" },
+          { id: "other-root", directory: "/tmp/other" },
+        ],
+        cursor: null,
+      },
+    ],
+    ["/api/session/root", { data: { id: "root", directory: "/tmp/project", title: "Root" } }],
+  ]);
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    calls.push(path);
+    if (path.endsWith("/permission") || path.endsWith("/form")) {
+      return Response.json({ data: [] });
+    }
+    const payload = responses.get(path);
+    if (payload === undefined) throw new Error(`unexpected fetch: ${path}`);
+    return Response.json(payload);
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": { sessionId: "root" } },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "running");
+    assert.ok(calls.includes("/api/session"));
+    assert.ok(calls.includes("/api/session/grandchild-running/permission"));
+    assert.ok(calls.every((path) => path !== "/session/status"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 server discovers child blockers from the session listing without plugin state", async () => {
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: mkdtempSync(join(tmpdir(), "empty-plugin-state-")),
+  });
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    calls.push(path);
+    if (path === "/api/info") return Response.json({ data: { version: "2.0.12" } });
+    if (path === "/api/session/active") return Response.json({ data: {} });
+    if (path === "/api/session") {
+      return Response.json({
+        data: [
+          { id: "root", directory: "/tmp/project" },
+          { id: "child-blocked", parentID: "root", directory: "/tmp/project" },
+        ],
+        cursor: null,
+      });
+    }
+    if (path === "/api/session/root") {
+      return Response.json({ data: { id: "root", directory: "/tmp/project" } });
+    }
+    if (path === "/api/session/child-blocked/permission") {
+      return Response.json({ data: [{ id: "permission-1" }] });
+    }
+    if (path.endsWith("/permission") || path.endsWith("/form")) {
+      return Response.json({ data: [] });
+    }
+    throw new Error(`unexpected fetch: ${path}`);
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": { sessionId: "root" } },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "waiting-input");
+    assert.ok(calls.every((path) => path !== "/session/status"));
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 server fails safely when session family metadata is incomplete or ambiguous", async () => {
+  for (const sessions of [
+    [{ id: "child", parentID: "root", directory: "/tmp/project" }],
+    [
+      { id: "root", directory: "/tmp/project" },
+      { id: "child", parentID: "root", directory: "/tmp/project" },
+      { id: "child", parentID: "other-root", directory: "/tmp/project" },
+    ],
+  ]) {
+    const restoreEnv = setEnv({
+      CODING_AGENTS_TMUX_STATE_DIR: mkdtempSync(join(tmpdir(), "empty-plugin-state-")),
+    });
+    const calls: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (input) => {
+      const path = new URL(String(input)).pathname;
+      calls.push(path);
+      if (path === "/api/info") return Response.json({ data: { version: "2.0.12" } });
+      if (path === "/api/session/active") return Response.json({ data: {} });
+      if (path === "/api/session") return Response.json({ data: sessions, cursor: null });
+      if (path === "/api/session/root") {
+        return Response.json({ data: { id: "root", directory: "/tmp/project" } });
+      }
+      throw new Error(`unexpected fetch: ${path}`);
+    };
+
+    try {
+      const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+        provider: "server",
+        serverMap: JSON.stringify({
+          generation: "v2",
+          endpoint: "http://127.0.0.1:4096",
+          panes: { "work:1.0": { sessionId: "root" } },
+        }),
+      });
+
+      assert.equal(summary?.runtime.status, "unknown");
+      assert.match(
+        summary?.runtime.detail ?? "",
+        /session family metadata.*(?:incomplete|ambiguous)/i,
+      );
+      assert.ok(calls.every((path) => path !== "/session/status"));
+    } finally {
+      globalThis.fetch = originalFetch;
+      restoreEnv();
+    }
+  }
+});
+
+test("legacy server maps probe API info and never send V1 status requests to V2", async () => {
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    return Response.json({ data: { version: "2.0.12" } });
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({ "work:1.0": "http://127.0.0.1:4096" }),
+    });
+
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.match(summary?.runtime.detail ?? "", /API mismatch.*legacy V1 map.*V2/i);
+    assert.deepEqual(calls, ["/api/info"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("auto preserves a legacy-map V2 API mismatch instead of using V1 SQLite", async () => {
+  const { databasePath } = createSqliteDataHome();
+  const database = initializeSqliteDatabase(databasePath);
+  insertSession(database, {
+    id: "unrelated-v1",
+    directory: "/tmp/project",
+    title: "Old V1",
+    timeUpdated: Date.now(),
+  });
+  database.close();
+  const restoreEnv = setEnv({
+    CODING_AGENTS_TMUX_STATE_DIR: mkdtempSync(join(tmpdir(), "empty-plugin-state-")),
+    OPENCODE_DB: databasePath,
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ data: { version: "2.0.12" } });
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "auto",
+      serverMap: JSON.stringify({ "work:1.0": "http://127.0.0.1:4096" }),
+    });
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.match(summary?.runtime.detail ?? "", /API mismatch.*legacy V1 map.*V2/i);
+    assert.notEqual(summary?.runtime.session?.id, "unrelated-v1");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 server rejects API mismatches before making session requests", async () => {
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    calls.push(url.pathname);
+    return Response.json({ data: { version: "1.18.29" } });
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": { sessionId: "root" } },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.match(summary?.runtime.detail ?? "", /API mismatch.*expected V2.*1\.18\.29/i);
+    assert.deepEqual(calls, ["/api/info"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("V2 server requires an exact pane/root mapping and does not infer by directory", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      directory: "/tmp/project",
+      title: "Directory-only state",
+      sessionId: "root",
+      familySessionIds: ["root"],
+      status: "idle",
+      activity: "idle",
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    calls.push(String(input));
+    throw new Error("must not fetch");
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": {} },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.match(summary?.runtime.detail ?? "", /requires sessionId or exact plugin root state/);
+    assert.deepEqual(calls, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 shared-server template describes one endpoint with explicit pane session mappings", () => {
+  assert.deepEqual(
+    buildServerMapTemplate(
+      [createPane({ target: "work:1.0" }), createPane({ target: "work:1.1", paneIndex: 1 })],
+      { basePort: 4096 },
+    ),
+    {
+      generation: "v2",
+      endpoint: "http://127.0.0.1:4096",
+      panes: {
+        "work:1.0": { sessionId: "" },
+        "work:1.1": { sessionId: "" },
+      },
+    },
+  );
+});
+
+test("OpenCode inspect debug reports generation, plugin family, database schema, and server mismatch", async () => {
+  const binDir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-debug-bin-"));
+  const executable = join(binDir, "opencode");
+  writeFileSync(executable, "#!/bin/sh\nprintf 'opencode v2.0.12\\n'\n", "utf8");
+  chmodSync(executable, 0o755);
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/project",
+      title: "Root session",
+      sessionId: "root",
+      selectedSessionId: "child",
+      familySessionIds: ["root", "child"],
+      status: "idle",
+      activity: "idle",
+    },
+  ]);
+  const databasePath = join(mkdtempSync(join(tmpdir(), "coding-agents-tmux-debug-db-")), "v2.db");
+  const database = new DatabaseSync(databasePath);
+  database.exec("CREATE TABLE session_v2 (id TEXT PRIMARY KEY)");
+  database.close();
+  const restoreEnv = setEnv({
+    PATH: `${binDir}:${process.env.PATH ?? ""}`,
+    OPENCODE_DB: databasePath,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ data: { version: "1.18.29" } });
+
+  try {
+    const debug = await buildInspectDebugInfo(createDiscoveredPane(), {
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": {} },
+      }),
+    });
+
+    assert.equal(debug.codex, null);
+    assert.deepEqual(debug.opencode?.detected, { generation: 2, version: "2.0.12" });
+    assert.equal(debug.opencode?.plugin.matchedState?.state.sessionId, "root");
+    assert.deepEqual(debug.opencode?.plugin.matchedState?.state.familySessionIds, [
+      "root",
+      "child",
+    ]);
+    assert.match(debug.opencode?.plugin.matchedState?.filePath ?? "", /state-1\.json$/);
+    assert.equal(debug.opencode?.sqlite.path, databasePath);
+    assert.equal(debug.opencode?.sqlite.source, "env");
+    assert.equal(debug.opencode?.sqlite.schema, "v2");
+    assert.equal(debug.opencode?.server.configuredGeneration, "v2");
+    assert.equal(debug.opencode?.server.detectedGeneration, "v1");
+    assert.match(debug.opencode?.server.error ?? "", /API mismatch/i);
+  } finally {
     globalThis.fetch = originalFetch;
     restoreEnv();
   }

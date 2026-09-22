@@ -63,7 +63,9 @@ Requirements:
 - Node 24+ must be installed
 - npm 10+ must be installed
 - TPM will install CLI dependencies automatically on first load with `npm ci --omit=dev`
-- `opencode` sessions must be restarted after first install so the bundled plugin is loaded
+- OpenCode V2 is the primary supported integration; OpenCode V1 1.18.29+ is supported as a temporary compatibility bridge
+- OpenCode versions older than V1 1.18.29 are not supported
+- `opencode` clients must be restarted after first install so the generation-appropriate bundled plugin is loaded
 - `codex` sessions must be restarted after first install so newly installed hooks are loaded
 - `pi` sessions must be restarted after first install so the bundled extension is loaded
 - `claude` sessions must be restarted after Claude hook installation so new hooks are loaded
@@ -72,17 +74,31 @@ Requirements:
 
 With the recommended settings above, the tmux plugin manages the bundled `opencode` plugin, the Pi extension, and the Codex and Claude hook installs for you.
 
-It installs the bundled `opencode` plugin at:
+It detects the installed OpenCode version and installs the matching bundled plugin layout:
 
 ```text
-~/.config/opencode/plugins/coding-agents-tmux.ts
+OpenCode V2: ~/.config/opencode/plugins/coding-agents-tmux/index.ts
+             ~/.config/opencode/plugins/coding-agents-tmux/tui.ts
+OpenCode V1: ~/.config/opencode/plugins/coding-agents-tmux.ts
 ```
+
+The V2 directory or V1 file is symlinked to the TPM-installed plugin. If `XDG_CONFIG_HOME` is set, replace `~/.config` with that directory. The installer removes the managed layout for the other generation when upgrading or rolling back.
+
+TPM runs the generation-aware installer automatically. To run it manually after changing OpenCode versions:
+
+```bash
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux install-opencode
+```
+
+After a V2 install or update, restart each full OpenCode TUI client so its pane-local TUI plugin loads. After a V1 install or update, restart each OpenCode V1 session/server process so the server plugin reloads.
 
 That plugin publishes normalized session state files under:
 
 ```text
 ~/.local/state/coding-agents-tmux/plugin-state
 ```
+
+`XDG_STATE_HOME` changes the `~/.local/state` root. `CODING_AGENTS_TMUX_STATE_DIR` overrides the complete plugin-state path for both OpenCode generations.
 
 On first install, the tmux plugin also bootstraps the CLI runtime dependencies inside:
 
@@ -327,20 +343,46 @@ Available tmux options:
 
 Recommended provider:
 
-- `plugin` for the best waiting/running/idle detection in normal local `opencode` sessions, and the default tmux integration provider
+- `plugin` for the best waiting/running/idle detection in normal local OpenCode sessions, and the default tmux integration provider
 
 Provider modes:
 
-- `auto` uses plugin state when available, then server endpoints, then sqlite
-- `plugin` uses only plugin state files
-- `sqlite` uses the local `opencode` sqlite database
-- `server` uses explicit `opencode serve` endpoints from `@coding-agents-tmux-server-map`
+- `auto` uses plugin state when available, then a configured generation-aware server adapter, then the safe V1 SQLite fallback
+- `plugin` uses only plugin state files; pane-local TUI state is the preferred V2 source of truth
+- `sqlite` provides exact status only for the supported V1 bridge; it resolves `OPENCODE_DB`, then `opencode debug paths db`, then the legacy V1 path, and explicitly refuses V2 or unknown schemas
+- `server` uses a legacy V1 pane-to-endpoint map or a typed V2 shared-server map from `@coding-agents-tmux-server-map`
 
 Example:
 
 ```tmux
 set -g @coding-agents-tmux-provider 'plugin'
 ```
+
+### OpenCode V2 architecture
+
+OpenCode V2 normally uses one shared background service for multiple terminal clients. The bundled TUI plugin runs inside each full TUI client, where `TMUX_PANE` is trustworthy, and publishes that pane's selected root session plus its child-session family. Child activity and blockers affect the pane state without replacing the root session identity.
+
+The background service is shared state, not pane ownership. A server endpoint alone cannot identify which session belongs to a pane, so the V2 server provider also requires an explicit pane-to-root-session mapping. Generate a starting template with:
+
+```bash
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux server-map-template
+```
+
+The V2 shape is:
+
+```json
+{
+  "generation": "v2",
+  "endpoint": "http://127.0.0.1:4096",
+  "panes": {
+    "work:1.2": { "sessionId": "root-session-id" }
+  }
+}
+```
+
+Set it directly with `@coding-agents-tmux-server-map`, point that option at a JSON file, or use `CODING_AGENTS_TMUX_SERVER_MAP`. The adapter verifies `/api/info`, then uses the V2 `/api/session/active`, `/api/session/{id}`, permission, and form endpoints. Legacy V1 maps retain the flat `{"target":"endpoint"}` shape and use the V1 API only.
+
+OpenCode `mini` V2.0.9 does not load the TUI plugin. In mini, pane-local plugin state may therefore be unavailable; `auto` must rely on other configured or fallback signals, which have reduced state and pane/session fidelity. Do not expect mini to match the full TUI's exact waiting and root-family tracking.
 
 ## Pi
 
@@ -479,8 +521,13 @@ State accuracy in either project depends on the agent. Native hooks and plugins 
 
 - `prefix + O` or `prefix + P` does nothing: make sure `node` and `npm` are installed and reload tmux
 - first TPM load feels slow: the plugin may be running `npm ci --omit=dev` to bootstrap dependencies
-- new panes show stale state: restart the `opencode` session so it reloads the plugin
-- waiting detection seems wrong: use the `plugin` provider and confirm the bundled plugin symlink exists at `~/.config/opencode/plugins/coding-agents-tmux.ts`
+- OpenCode V1 reports an unsupported version: upgrade to V1 1.18.29+ or, preferably, V2, then rerun `coding-agents-tmux install-opencode`; older V1 loaders are not supported
+- OpenCode V2 shows no plugin state: run `coding-agents-tmux install-opencode`, confirm the `coding-agents-tmux/` plugin directory is under `${XDG_CONFIG_HOME:-$HOME/.config}/opencode/plugins`, restart every full TUI client, and use `inspect <target> --debug` to check generation, plugin candidates, and the selected root family
+- OpenCode still loads an old V1 plugin or the wrong layout: rerun `coding-agents-tmux install-opencode`; it removes managed stale V1/V2 symlinks. If it refuses an unmanaged path, move that path aside and retry rather than deleting it blindly
+- OpenCode state follows the wrong pane after a layout change: restart the affected client to republish `TMUX_PANE` and its target, remove only stale files in `${CODING_AGENTS_TMUX_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/coding-agents-tmux/plugin-state}`, then inspect the pane with `--debug`
+- `sqlite` reports a V2 or unknown schema: switch to `plugin` or a typed V2 `server` map. The SQLite adapter intentionally supports only V1 `session`/`part` tables; use `inspect <target> --debug` to see the resolved database path and schema
+- `server` reports an API mismatch: use a typed V2 shared map for a V2 `/api/info` endpoint, or a flat legacy map only for V1. Regenerate with `server-map-template` and verify the mapped root session ID
+- OpenCode mini has no exact state: V2.0.9 mini does not load the TUI plugin; use a typed V2 server map if possible, otherwise expect reduced-fidelity fallback state
 - Pi still looks busy or unknown: confirm the bundled extension exists at `~/.pi/agent/extensions/coding-agents-tmux/index.ts` and restart the Pi session so it loads the extension
 - Codex still always looks busy: confirm `~/.codex/config.toml` has `hooks = true` under `[features]`, `~/.codex/hooks.json` exists, and restart the Codex session
 - Claude still always looks busy: confirm `~/.claude/settings.json` contains the managed `claude-hook-state` hook command and restart the Claude Code session
@@ -531,5 +578,7 @@ Useful commands:
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux status --summary --json
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux popup --client auto
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux menu --client auto
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux install-opencode
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux server-map-template
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux tmux-config --provider plugin
 ```

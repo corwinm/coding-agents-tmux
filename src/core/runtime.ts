@@ -43,10 +43,11 @@ export async function attachRuntimeToPanes(
 export function getRuntimeProviderHelpText(): string {
   return [
     "Runtime providers:",
-    "  auto    Use plugin state when available, then server endpoints, then sqlite",
-    "  plugin  Use opencode plugin state files only",
-    "  sqlite  Use local opencode sqlite state only",
-    "  server  Use explicit server endpoints only",
+    "  auto    Use plugin state when available, then server endpoints, then safe SQLite fallback",
+    "  plugin  Use pane-local OpenCode plugin state files only",
+    "  sqlite  Use supported V1 OpenCode SQLite state only",
+    "  server  Use an explicit legacy V1 map or typed V2 shared-server map",
+    "  SQLite is V1-only and reports V2 schemas as unavailable.",
     "",
     "Plugin state:",
     `  Default path: ${getPluginStateDir()}`,
@@ -65,7 +66,9 @@ export function getRuntimeProviderHelpText(): string {
     "",
     "Server map:",
     "  Pass --server-map with a JSON object or a path to a JSON file.",
-    '  Example: {"work:1.2":"http://127.0.0.1:4096"}',
+    "  V2 uses one shared endpoint plus exact pane-to-root-session mappings.",
+    '  V2 example: {"generation":"v2","endpoint":"http://127.0.0.1:4096","panes":{"work:1.2":{"sessionId":"ses..."}}}',
+    '  Legacy V1 example: {"work:1.2":"http://127.0.0.1:4096"}',
     "  You can also set CODING_AGENTS_TMUX_SERVER_MAP with the same value.",
   ].join("\n");
 }

@@ -193,6 +193,56 @@ export function renderInspectResult(result: InspectResult): string {
     lines.push("  Session: none");
   }
 
+  if (result.debug?.opencode) {
+    const debug = result.debug.opencode;
+    const matched = debug.plugin.matchedState;
+    const matchedState = matched?.state;
+    lines.push(
+      "",
+      "Debug",
+      `  OpenCode Generation: ${debug.detected ? `V${debug.detected.generation}` : "unknown"}`,
+      `  OpenCode Version: ${debug.detected?.version ?? "unknown"}`,
+      `  Detection Error: ${debug.detectionError ?? "none"}`,
+      `  Plugin Install Status: ${debug.plugin.installation.status}`,
+      `  Plugin Layout: ${debug.plugin.installation.expectedLayout}`,
+      `  Plugin Entrypoint: ${debug.plugin.installation.entrypoint}`,
+      `  Plugin Source: ${debug.plugin.installation.source ?? "none"}`,
+      `  Stale Plugin Entries: ${
+        debug.plugin.installation.stale.length > 0
+          ? debug.plugin.installation.stale
+              .map((entry) => `${entry.layout}:${entry.entrypoint}`)
+              .join(", ")
+          : "none"
+      }`,
+      ...(debug.plugin.installation.diagnostics.length > 0
+        ? debug.plugin.installation.diagnostics.map(
+            (diagnostic) => `  Plugin Diagnostic: ${diagnostic}`,
+          )
+        : ["  Plugin Diagnostic: none"]),
+      `  Plugin State Dir: ${debug.plugin.stateDir}`,
+      `  Plugin State File: ${matched?.filePath ?? "none"}`,
+      `  Plugin Match: ${matched?.matchKind ?? "none"}`,
+      `  Root Session: ${String(matchedState?.sessionId ?? "none")}`,
+      `  Selected Session: ${String(matchedState?.selectedSessionId ?? "none")}`,
+      `  Session Family: ${
+        Array.isArray(matchedState?.familySessionIds)
+          ? matchedState.familySessionIds.join(", ")
+          : "none"
+      }`,
+      `  Database Path: ${debug.sqlite.path}`,
+      `  Database Path Source: ${debug.sqlite.source}`,
+      `  Database Schema: ${debug.sqlite.schema}`,
+      `  Database Tables: ${debug.sqlite.tables.join(", ") || "none"}`,
+      `  Database Error: ${debug.sqlite.error ?? "none"}`,
+      `  Server Configured Generation: ${debug.server.configuredGeneration ?? "none"}`,
+      `  Server Detected Generation: ${debug.server.detectedGeneration ?? "none"}`,
+      `  Server Endpoint: ${debug.server.endpoint ?? "none"}`,
+      `  Server Session: ${debug.server.sessionId ?? "none"}`,
+      `  Server Version: ${debug.server.version ?? "unknown"}`,
+      `  Server Error: ${debug.server.error ?? "none"}`,
+    );
+  }
+
   if (result.debug?.codex) {
     lines.push(
       "",

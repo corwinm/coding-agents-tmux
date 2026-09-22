@@ -1,5 +1,7 @@
 # coding-agents-tmux Tasks
 
+Milestones 1–10 are the historical V1 build plan. Current OpenCode work is V2-first: the pane-local TUI plugin is primary, and generation-aware adapters keep V2 shared-service APIs separate from the temporary V1 1.18.29+ server and SQLite bridge.
+
 ## Milestone 1: Project Bootstrap
 
 - Initialize a Node 24 + TypeScript project.
@@ -22,7 +24,7 @@
 - Add `--json` output.
 - Include target id, title, cwd, and preliminary detection info.
 
-## Milestone 4: SQLite State Provider
+## Milestone 4: SQLite State Provider (Historical V1)
 
 - Add an opencode SQLite access layer.
 - Inspect the relevant session and part data needed for status classification.
@@ -49,7 +51,7 @@
 - Reuse list data so the chooser includes status and labels.
 - Support switching the current tmux client to the selected pane or window.
 
-## Milestone 7: Provider Abstraction
+## Milestone 7: Provider Abstraction (Historical V1)
 
 - Refactor state lookup behind a provider interface.
 - Keep SQLite as the default initial provider.
@@ -63,7 +65,7 @@
 - Add shell-friendly exit codes.
 - Add sample usage to the README.
 
-## Milestone 9: Long-Term Server Provider
+## Milestone 9: Long-Term Server Provider (Historical V1)
 
 - Add support for explicit opencode server ports.
 - Map tmux panes to known opencode server endpoints.

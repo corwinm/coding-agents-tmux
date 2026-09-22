@@ -341,21 +341,16 @@ install_cli_dependencies() {
 }
 
 install_opencode_plugin() {
-  local plugin_source="$CURRENT_DIR/plugin/coding-agents-tmux.ts"
-  local config_root plugin_dir plugin_target legacy_plugin_target
+  local output
 
-  if [ ! -f "$plugin_source" ]; then
-    tmux display-message "coding-agents-tmux: missing plugin/coding-agents-tmux.ts in plugin directory"
+  if ! command -v opencode >/dev/null 2>&1; then
     return
   fi
 
-  config_root="${XDG_CONFIG_HOME:-$HOME/.config}"
-  plugin_dir="$config_root/opencode/plugins"
-  plugin_target="$plugin_dir/coding-agents-tmux.ts"
-
-  mkdir -p "$plugin_dir"
-  ln -sfn "$plugin_source" "$plugin_target"
-  tmux set-option -gq '@coding-agents-tmux-plugin-path' "$plugin_target"
+  if ! output="$("$CURRENT_DIR/bin/coding-agents-tmux" install-opencode 2>&1)"; then
+    output="${output//$'\n'/; }"
+    tmux display-message "coding-agents-tmux: failed to install OpenCode plugin: $output"
+  fi
 }
 
 install_codex_hooks() {

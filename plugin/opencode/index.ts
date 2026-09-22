@@ -478,5 +478,6 @@ export const CodingAgentsTmuxPlugin = async ({ directory, project, client }: Plu
 
 export default {
   id: "coding-agents-tmux",
+  setup() {},
   server: CodingAgentsTmuxPlugin,
 };

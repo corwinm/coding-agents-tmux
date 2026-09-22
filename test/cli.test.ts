@@ -81,6 +81,21 @@ ${resolvedScript}
   return { pathEntry: dir, logPath };
 }
 
+function installFakeOpenCode(output: string): string {
+  const dir = mkdtempSync(join(tmpdir(), "coding-agents-tmux-cli-opencode-"));
+  const opencodePath = join(dir, "opencode");
+  writeFileSync(
+    opencodePath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%b' ${JSON.stringify(output)}
+`,
+    "utf8",
+  );
+  chmodSync(opencodePath, 0o755);
+  return dir;
+}
+
 function createPane(overrides: Partial<TmuxPane> = {}): TmuxPane {
   const sessionName = overrides.sessionName ?? "work";
   const windowIndex = overrides.windowIndex ?? 1;
@@ -432,6 +447,45 @@ test("CLI install-tmux writes and replaces a marked config block", async () => {
   assert.equal(contents.match(/# >>> coding-agents-tmux >>>/g)?.length, 1);
 });
 
+test("CLI install-opencode reports generation, version, path, and restart guidance", async () => {
+  const configRoot = mkdtempSync(join(tmpdir(), "coding-agents-tmux opencode config "));
+  const opencodeBin = installFakeOpenCode("opencode v2.0.9\n");
+  const restoreEnv = setEnv({
+    PATH: `${opencodeBin}:${process.env.PATH ?? ""}`,
+    XDG_CONFIG_HOME: configRoot,
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "install-opencode"]);
+    const pluginPath = join(configRoot, "opencode", "plugins", "coding-agents-tmux");
+
+    assert.equal(result.exitCode, 0, result.stderrText);
+    assert.match(result.stdoutText, /Detected OpenCode V2 2\.0\.9/);
+    assert.match(
+      result.stdoutText,
+      new RegExp(`Installed ${pluginPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+    );
+    assert.match(result.stdoutText, /plugin\/opencode/);
+    assert.match(result.stdoutText, /Restart OpenCode clients/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI install-opencode rejects unsupported V1 with upgrade guidance", async () => {
+  const opencodeBin = installFakeOpenCode("1.18.28\n");
+  const restoreEnv = setEnv({ PATH: `${opencodeBin}:${process.env.PATH ?? ""}` });
+
+  try {
+    const result = await runCommand([BIN_PATH, "install-opencode"]);
+    assert.equal(result.exitCode, 1);
+    assert.match(result.stderrText, /OpenCode V1 1\.18\.28 is unsupported/);
+    assert.match(result.stderrText, /1\.18\.29 or newer/);
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("CLI install-codex writes Codex config and hooks files", async () => {
   const codexHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-codex-home-"));
   const restoreEnv = setEnv({ CODEX_HOME: codexHome });
@@ -704,7 +758,7 @@ exit 1
   }
 });
 
-test("CLI server-map-template prints sequential endpoints for discovered panes", async () => {
+test("CLI server-map-template prints a V2 shared-server pane/session map", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
   printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
@@ -728,8 +782,12 @@ exit 1
 
     assert.equal(result.exitCode, 0);
     assert.deepEqual(JSON.parse(result.stdoutText), {
-      "work:1.0": "http://127.0.0.2:4096",
-      "work:1.1": "http://127.0.0.2:4097",
+      generation: "v2",
+      endpoint: "http://127.0.0.2:4096",
+      panes: {
+        "work:1.0": { sessionId: "" },
+        "work:1.1": { sessionId: "" },
+      },
     });
   } finally {
     restoreEnv();
