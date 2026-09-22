@@ -243,6 +243,32 @@ test("plugin provider rejects a target record bound to a different pane", async 
   }
 });
 
+test("plugin provider rejects stale V2 pane-bound state", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/previous-project",
+      title: "Previous pane occupant",
+      sessionId: "stale-root",
+      status: "running",
+      activity: "busy",
+      updatedAt: Date.now() - 60_000,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "plugin" });
+
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.equal(summary?.runtime.match.provider, "none");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("plugin provider uses safe descendant heuristics and leaves ambiguous panes unmapped", async () => {
   const pluginStateDir = createPluginStateDir([
     {

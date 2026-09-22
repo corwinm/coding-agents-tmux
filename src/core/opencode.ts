@@ -449,13 +449,22 @@ function getLatestPluginState(states: PluginStateFile[]): PluginStateFile | null
 
 const PANE_BOUND_PLUGIN_STATE_MAX_AGE_MS = 30_000;
 
-function isCurrentPaneBoundPluginState(state: PluginStateFile, pane: TmuxPane): boolean {
+function isFreshV2PluginState(state: PluginStateFile): boolean {
+  if (state.opencodeGeneration !== "v2") return true;
   const updatedAt = getStateUpdatedAt(state);
+  return updatedAt > 0 && Date.now() - updatedAt <= PANE_BOUND_PLUGIN_STATE_MAX_AGE_MS;
+}
+
+function isCurrentPaneBoundPluginState(state: PluginStateFile, pane: TmuxPane): boolean {
   return (
     state.directory === pane.currentPath &&
-    updatedAt > 0 &&
-    Date.now() - updatedAt <= PANE_BOUND_PLUGIN_STATE_MAX_AGE_MS
+    state.opencodeGeneration === "v2" &&
+    isFreshV2PluginState(state)
   );
+}
+
+function isUsableExactPluginState(state: PluginStateFile, pane: TmuxPane): boolean {
+  return state.opencodeGeneration !== "v2" || isCurrentPaneBoundPluginState(state, pane);
 }
 
 function getPaneBoundPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
@@ -473,18 +482,23 @@ function getPaneBoundPluginState(index: PluginStateIndex, pane: TmuxPane): Plugi
 function getExactPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
   const paneIdState = index.exactPaneIdMatches.get(pane.paneId);
 
-  if (paneIdState) {
+  if (paneIdState && isUsableExactPluginState(paneIdState, pane)) {
     return paneIdState;
   }
 
   const targetState = index.exactTargetMatches.get(pane.target);
 
-  if (targetState && (!targetState.paneId || targetState.paneId === pane.paneId)) {
+  if (
+    targetState &&
+    (!targetState.paneId || targetState.paneId === pane.paneId) &&
+    isUsableExactPluginState(targetState, pane)
+  ) {
     return targetState;
   }
 
   const states = (index.statesByDirectory.get(pane.currentPath) ?? []).filter(
-    (state) => !state.paneId || state.paneId === pane.paneId,
+    (state) =>
+      (!state.paneId || state.paneId === pane.paneId) && isUsableExactPluginState(state, pane),
   );
 
   if (states.length === 0) {
@@ -513,7 +527,9 @@ function getDescendantPluginState(
   }
 
   const normalizedDirectory = directory.endsWith("/") ? directory : `${directory}/`;
-  const states = index.states.filter((state) => state.directory?.startsWith(normalizedDirectory));
+  const states = index.states.filter(
+    (state) => state.directory?.startsWith(normalizedDirectory) && isFreshV2PluginState(state),
+  );
 
   let match: PluginStateFile | null = null;
 
