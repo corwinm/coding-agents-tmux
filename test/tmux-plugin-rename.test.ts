@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import test from "node:test";
 
 import { runCommand } from "../src/runtime.ts";
@@ -70,6 +70,20 @@ exit 0
   chmodSync(npmPath, 0o755);
 }
 
+function installFakeOpenCode(pathEntry: string, versionOutput: string): void {
+  const opencodePath = join(pathEntry, "opencode");
+
+  writeFileSync(
+    opencodePath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf '%b' ${JSON.stringify(versionOutput)}
+`,
+    "utf8",
+  );
+  chmodSync(opencodePath, 0o755);
+}
+
 test("coding-agents-tmux.tmux reads renamed tmux options", async () => {
   const fakeTmux = installFakeTmux(`
 log_path='__LOG_PATH__'
@@ -85,6 +99,9 @@ show-option)
       printf 'O\n'
       ;;
     @coding-agents-tmux-status)
+      printf 'off\n'
+      ;;
+    @coding-agents-tmux-install-opencode-plugin)
       printf 'off\n'
       ;;
   esac
@@ -136,10 +153,11 @@ esac
 printf 'unexpected args: %s\n' "$*" >&2
 exit 1
 `);
-  const home = mkdtempSync(join(tmpdir(), "coding-agents-tmux-home-"));
-  const configHome = join(home, ".config-home");
+  const home = mkdtempSync(join(tmpdir(), "coding-agents-tmux home with spaces "));
+  const configHome = join(home, ".config home");
   const piHome = join(home, ".pi-home");
   installFakeNpm(fakeTmux.pathEntry);
+  installFakeOpenCode(fakeTmux.pathEntry, "opencode v2.0.9\n");
   const restoreEnv = setEnv({
     HOME: home,
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
@@ -149,7 +167,7 @@ exit 1
 
   try {
     const result = await runCommand([join(process.cwd(), "coding-agents-tmux.tmux")]);
-    const pluginPath = join(configHome, "opencode", "plugins", "coding-agents-tmux.ts");
+    const pluginPath = join(configHome, "opencode", "plugins", "coding-agents-tmux");
     const piExtensionPath = join(piHome, "extensions", "coding-agents-tmux", "index.ts");
 
     assert.equal(result.exitCode, 0);
@@ -158,8 +176,85 @@ exit 1
     assert.ok(existsSync(piExtensionPath));
     assert.ok(lstatSync(pluginPath).isSymbolicLink());
     assert.ok(lstatSync(piExtensionPath).isSymbolicLink());
-    assert.equal(readlinkSync(pluginPath), join(process.cwd(), "plugin", "coding-agents-tmux.ts"));
+    assert.equal(readlinkSync(pluginPath), join(process.cwd(), "plugin", "opencode"));
     assert.equal(readlinkSync(piExtensionPath), join(process.cwd(), "plugin", "pi-tmux.ts"));
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("coding-agents-tmux.tmux silently skips OpenCode auto-install when OpenCode is missing", async () => {
+  const fakeTmux = installFakeTmux(`
+log_path='__LOG_PATH__'
+option="\${!#}"
+case "$1" in
+show-option)
+  case "$option" in
+    @coding-agents-tmux-status) printf 'off\n' ;;
+    @coding-agents-tmux-auto-install) printf 'opencode\n' ;;
+  esac
+  exit 0
+  ;;
+display-message|bind-key|set-option|set-hook|refresh-client|unbind-key)
+  printf '%s\n' "$*" >> "$log_path"
+  exit 0
+  ;;
+esac
+exit 1
+`);
+  installFakeNpm(fakeTmux.pathEntry);
+  const home = mkdtempSync(join(tmpdir(), "coding-agents-tmux-home-"));
+  const restoreEnv = setEnv({
+    HOME: home,
+    PATH: `${fakeTmux.pathEntry}:${dirname(process.execPath)}:/usr/bin:/bin`,
+    XDG_CONFIG_HOME: join(home, ".config"),
+  });
+
+  try {
+    const result = await runCommand([join(process.cwd(), "coding-agents-tmux.tmux")]);
+    const log = existsSync(fakeTmux.logPath) ? readFileSync(fakeTmux.logPath, "utf8") : "";
+    assert.equal(result.exitCode, 0);
+    assert.doesNotMatch(log, /OpenCode|opencode|failed to install/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("coding-agents-tmux.tmux surfaces unsupported OpenCode diagnostics", async () => {
+  const fakeTmux = installFakeTmux(`
+log_path='__LOG_PATH__'
+option="\${!#}"
+case "$1" in
+show-option)
+  case "$option" in
+    @coding-agents-tmux-status) printf 'off\n' ;;
+    @coding-agents-tmux-auto-install) printf 'opencode\n' ;;
+  esac
+  exit 0
+  ;;
+display-message|bind-key|set-option|set-hook|refresh-client|unbind-key)
+  printf '%s\n' "$*" >> "$log_path"
+  exit 0
+  ;;
+esac
+exit 1
+`);
+  installFakeNpm(fakeTmux.pathEntry);
+  installFakeOpenCode(fakeTmux.pathEntry, "1.18.28\n");
+  const home = mkdtempSync(join(tmpdir(), "coding-agents-tmux-home-"));
+  const restoreEnv = setEnv({
+    HOME: home,
+    PATH: `${fakeTmux.pathEntry}:${dirname(process.execPath)}:/usr/bin:/bin`,
+    XDG_CONFIG_HOME: join(home, ".config"),
+  });
+
+  try {
+    const result = await runCommand([join(process.cwd(), "coding-agents-tmux.tmux")]);
+    assert.equal(result.exitCode, 0);
+    assert.match(
+      readFileSync(fakeTmux.logPath, "utf8"),
+      /display-message.*OpenCode V1 1\.18\.28 is unsupported.*1\.18\.29 or newer/,
+    );
   } finally {
     restoreEnv();
   }
@@ -174,6 +269,9 @@ case "$1" in
 show-option)
   case "$option" in
     @coding-agents-tmux-status)
+      printf 'off\n'
+      ;;
+    @coding-agents-tmux-install-opencode-plugin)
       printf 'off\n'
       ;;
     @coding-agents-tmux-notify-command)
@@ -215,6 +313,9 @@ case "$1" in
 show-option)
   case "$option" in
     @coding-agents-tmux-status)
+      printf 'off\n'
+      ;;
+    @coding-agents-tmux-install-opencode-plugin)
       printf 'off\n'
       ;;
     @coding-agents-tmux-auto-install)

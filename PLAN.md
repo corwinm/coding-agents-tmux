@@ -26,6 +26,8 @@ The first version should be a standalone CLI. Later versions should add tmux-nat
 
 ## Recommended Architecture
 
+The provider phases below describe the original V1 proof-of-concept and are retained as history. The current OpenCode architecture is V2-first: a pane-local TUI plugin publishes root-session-family state, while generation-aware adapters isolate the temporary V1 1.18.29+ bridge, V2 shared-server API, and V1-only SQLite fallback.
+
 ### Core Modules
 
 #### `core/tmux`
@@ -55,8 +57,9 @@ Responsibilities:
 
 Provider plan:
 
-- Phase 1: SQLite-backed provider using the local opencode database.
-- Phase 2: Server-backed provider using explicit ports and event streaming.
+- Historical Phase 1: V1 SQLite-backed provider using the local OpenCode database.
+- Historical Phase 2: V1 server-backed provider using explicit ports and event streaming.
+- Current: V2 pane-local plugin first, with generation-aware server and SQLite adapters.
 
 #### `core/model`
 
@@ -127,6 +130,8 @@ The tmux-native layer should depend on the same discovery and status pipeline as
 
 ### Phase 1 Source of Truth
 
+Historical V1 milestone; this is not the current V2 source of truth.
+
 Use the local SQLite database at the opencode data path.
 
 Expected classifications:
@@ -145,12 +150,12 @@ Why SQLite first:
 
 ### Long-Term Source of Truth
 
-Move toward the built-in opencode server and event stream.
+This section records the original V1 direction. Current V2 uses a pane-local TUI plugin as the source of pane/session identity and treats the shared service as supplemental state.
 
-Preferred long-term model:
+Historical V1 model:
 
-- launch opencode instances with explicit ports
-- map pane to server endpoint
+- launch OpenCode V1 instances with explicit ports
+- map a V1 pane to its server endpoint
 - consume `/session/status`
 - subscribe to `/event`
 
@@ -159,7 +164,7 @@ Why this is better:
 - more real-time
 - less polling
 - clearer session ownership
-- fewer mapping ambiguities
+- fewer mapping ambiguities in the original V1 process model
 
 ## UX Principles
 

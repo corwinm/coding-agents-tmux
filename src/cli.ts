@@ -27,6 +27,8 @@ import {
   persistCodexHookState,
 } from "./core/codex.ts";
 import { notifyIntegration } from "./core/notifications.ts";
+import { detectOpenCodeVersion } from "./core/opencode-generation.ts";
+import { installOpenCodeIntegration } from "./core/opencode-install.ts";
 import { buildInspectDebugInfo, buildServerMapTemplate } from "./core/opencode.ts";
 import { attachRuntimeToPanes, getRuntimeProviderHelpText } from "./core/runtime.ts";
 import {
@@ -104,6 +106,8 @@ interface InstallTmuxOptions extends TmuxConfigOptions {
 interface InstallCodexOptions {}
 
 interface InstallClaudeOptions {}
+
+interface InstallOpenCodeOptions {}
 
 function getWindowKey(sessionName: string, windowIndex: number): string {
   return `${sessionName}:${windowIndex}`;
@@ -363,7 +367,7 @@ async function renderInspectOutput(target: string, options: InspectOptions): Pro
   };
 
   if (options.debug) {
-    result.debug = await buildInspectDebugInfo(pane);
+    result.debug = await buildInspectDebugInfo(pane, options);
   }
 
   return options.json ? JSON.stringify(result, null, 2) : renderInspectResult(result);
@@ -637,6 +641,16 @@ async function runInstallClaudeCommand(_options: InstallClaudeOptions): Promise<
   console.log("Restart Claude Code sessions so new hooks are loaded");
 }
 
+async function runInstallOpenCodeCommand(_options: InstallOpenCodeOptions): Promise<void> {
+  const detected = await detectOpenCodeVersion();
+  const result = installOpenCodeIntegration(detected);
+
+  console.log(`Detected OpenCode V${result.generation} ${result.version}`);
+  console.log(`${result.changed ? "Installed" : "Already installed"} ${result.pluginPath}`);
+  console.log(`Plugin source: ${result.sourcePath}`);
+  console.log("Restart OpenCode clients so the plugin is loaded");
+}
+
 interface StatusOutputContext {
   currentTarget?: PaneTarget;
   tmuxAvailable: boolean;
@@ -892,7 +906,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .option("--watch", "Continuously refresh pane status")
     .option("--interval <seconds>", "Watch refresh interval in seconds", "2")
@@ -917,7 +931,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .action(runInspectCommand);
 
@@ -933,7 +947,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .option("--active", "Only allow active tmux panes as candidates")
     .option("--waiting", "Only allow panes waiting for question or freeform input as candidates")
@@ -947,8 +961,8 @@ async function main(): Promise<void> {
 
   program
     .command("server-map-template")
-    .description("Print a JSON template for pane target to opencode server endpoint mappings")
-    .option("--base-port <port>", "Assign sequential ports starting from this base port")
+    .description("Print a typed OpenCode V2 shared-server pane/session map template")
+    .option("--base-port <port>", "Shared OpenCode server port")
     .option("--hostname <hostname>", "Hostname to use in generated endpoints", "127.0.0.1")
     .action(runServerMapTemplateCommand);
 
@@ -961,6 +975,11 @@ async function main(): Promise<void> {
     .command("codex-hook-state")
     .description("Ingest one Codex hook payload from stdin and update local runtime state")
     .action(runCodexHookStateCommand);
+
+  program
+    .command("install-opencode")
+    .description("Install the generation-appropriate OpenCode plugin")
+    .action(runInstallOpenCodeCommand);
 
   program
     .command("install-codex")
@@ -993,7 +1012,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .option("--active", "Only include active tmux panes")
     .option("--waiting", "Only include panes waiting for question or freeform input")
@@ -1017,7 +1036,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .option("--active", "Only include active tmux panes")
     .option("--waiting", "Only include panes waiting for question or freeform input")
@@ -1033,7 +1052,7 @@ async function main(): Promise<void> {
     .option("--provider <provider>", "Runtime provider: auto, plugin, sqlite, or server", "plugin")
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .option("--active", "Only include active tmux panes")
     .option("--waiting", "Only include panes waiting for question or freeform input")
@@ -1060,7 +1079,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .action(runStatusCommand);
 
@@ -1080,7 +1099,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .option("--menu-key <key>", "Tmux key binding for the menu chooser", "O")
     .option("--popup-key <key>", "Tmux key binding for the popup chooser", "P")
@@ -1108,7 +1127,7 @@ async function main(): Promise<void> {
     )
     .option(
       "--server-map <value>",
-      "JSON object or file path mapping pane targets to server endpoints",
+      "Legacy V1 target map or typed V2 shared-server map (JSON or file path)",
     )
     .option("--menu-key <key>", "Tmux key binding for the menu chooser", "O")
     .option("--popup-key <key>", "Tmux key binding for the popup chooser", "P")

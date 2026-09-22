@@ -10,7 +10,7 @@ export function getEnvValue(name: string): string | undefined {
 }
 
 export function getStateHome(): string {
-  return process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state");
+  return getEnvValue("XDG_STATE_HOME") ?? join(homedir(), ".local", "state");
 }
 
 export function getPreferredStateDir(input: { env: string; subdirectory: string }): string {
