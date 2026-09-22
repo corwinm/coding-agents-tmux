@@ -110,7 +110,8 @@ function assertManagedOrAbsent(
 }
 
 export function getOpenCodeConfigRoot(): string {
-  return process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config");
+  const xdgConfigHome = process.env.XDG_CONFIG_HOME?.trim();
+  return xdgConfigHome || join(homedir(), ".config");
 }
 
 export function installOpenCodeIntegration(

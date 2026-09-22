@@ -447,12 +447,25 @@ function getLatestPluginState(states: PluginStateFile[]): PluginStateFile | null
   }, null);
 }
 
+const PANE_BOUND_PLUGIN_STATE_MAX_AGE_MS = 30_000;
+
+function isCurrentPaneBoundPluginState(state: PluginStateFile, pane: TmuxPane): boolean {
+  const updatedAt = getStateUpdatedAt(state);
+  return (
+    state.directory === pane.currentPath &&
+    updatedAt > 0 &&
+    Date.now() - updatedAt <= PANE_BOUND_PLUGIN_STATE_MAX_AGE_MS
+  );
+}
+
 function getPaneBoundPluginState(index: PluginStateIndex, pane: TmuxPane): PluginStateFile | null {
   const paneIdState = index.exactPaneIdMatches.get(pane.paneId);
-  if (paneIdState) return paneIdState;
+  if (paneIdState && isCurrentPaneBoundPluginState(paneIdState, pane)) return paneIdState;
 
   const targetState = index.exactTargetMatches.get(pane.target);
-  return targetState && (!targetState.paneId || targetState.paneId === pane.paneId)
+  return targetState &&
+    (!targetState.paneId || targetState.paneId === pane.paneId) &&
+    isCurrentPaneBoundPluginState(targetState, pane)
     ? targetState
     : null;
 }

@@ -10,12 +10,12 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { detectOpenCodeVersion, parseOpenCodeVersion } from "../src/core/opencode-generation.ts";
-import { installOpenCodeIntegration } from "../src/core/opencode-install.ts";
+import { getOpenCodeConfigRoot, installOpenCodeIntegration } from "../src/core/opencode-install.ts";
 
 function makeFixture(): { configRoot: string; repoRoot: string } {
   const root = mkdtempSync(join(tmpdir(), "coding-agents-tmux opencode install "));
@@ -116,6 +116,18 @@ test("detectOpenCodeVersion reports missing binaries, command failures, and boun
     /timed out after 50ms/,
   );
   assert.ok(Date.now() - startedAt < 1_000, "version detection should stop the child promptly");
+});
+
+test("OpenCode config discovery treats an empty XDG_CONFIG_HOME as unset", () => {
+  const previous = process.env.XDG_CONFIG_HOME;
+  process.env.XDG_CONFIG_HOME = "";
+
+  try {
+    assert.equal(getOpenCodeConfigRoot(), join(homedir(), ".config"));
+  } finally {
+    if (previous === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previous;
+  }
 });
 
 test("V1 installation is idempotent, respects XDG config paths, and removes its owned V2 link", () => {

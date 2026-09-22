@@ -889,7 +889,7 @@ test("V2 server reconstructs a current family when plugin metadata omits a new a
       familySessionIds: ["root"],
       status: "idle",
       activity: "idle",
-      updatedAt: 100,
+      updatedAt: Date.now(),
     },
   ]);
   const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
@@ -960,7 +960,7 @@ test("V2 server prefers the stable pane identity over a conflicting target root"
       title: "Current root",
       sessionId: "current-root",
       familySessionIds: ["current-root"],
-      updatedAt: 100,
+      updatedAt: Date.now(),
     },
   ]);
   const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
@@ -999,6 +999,46 @@ test("V2 server prefers the stable pane identity over a conflicting target root"
     assert.equal(summary?.runtime.status, "idle");
     assert.equal(summary?.runtime.session?.id, "current-root");
     assert.ok(calls.every((path) => !path.includes("stale-root")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv();
+  }
+});
+
+test("V2 server rejects a stale pane-bound plugin root mapping", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/project",
+      title: "Previous pane occupant",
+      sessionId: "stale-root",
+      familySessionIds: ["stale-root"],
+      updatedAt: Date.now() - 60_000,
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+  const originalFetch = globalThis.fetch;
+  let fetchCount = 0;
+  globalThis.fetch = async () => {
+    fetchCount += 1;
+    throw new Error("stale plugin state must not select a server root");
+  };
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], {
+      provider: "server",
+      serverMap: JSON.stringify({
+        generation: "v2",
+        endpoint: "http://127.0.0.1:4096",
+        panes: { "work:1.0": {} },
+      }),
+    });
+
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.match(summary?.runtime.detail ?? "", /requires sessionId or exact plugin root state/);
+    assert.equal(fetchCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
     restoreEnv();
@@ -1082,7 +1122,7 @@ test("V2 server validates API generation and aggregates exact root-family blocke
       familySessionIds: ["root", "child-permission", "child-question"],
       status: "idle",
       activity: "idle",
-      updatedAt: 100,
+      updatedAt: Date.now(),
     },
   ]);
   const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
@@ -1168,7 +1208,7 @@ test("V2 server classifies a selectable child form when the root session is sele
       familySessionIds: ["root", "child-question"],
       status: "idle",
       activity: "idle",
-      updatedAt: 100,
+      updatedAt: Date.now(),
     },
   ]);
   const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
@@ -1524,6 +1564,7 @@ test("OpenCode inspect debug reports generation, plugin family, database schema,
       familySessionIds: ["root", "child"],
       status: "idle",
       activity: "idle",
+      updatedAt: Date.now(),
     },
   ]);
   const databasePath = join(mkdtempSync(join(tmpdir(), "coding-agents-tmux-debug-db-")), "v2.db");
