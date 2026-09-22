@@ -569,3 +569,31 @@ test("atomic writer leaves only the pane-specific state file", () => {
   assert.deepEqual(entries, [`pane-${Buffer.from("%7").toString("hex")}.json`]);
   assert.deepEqual(JSON.parse(readFileSync(join(stateDir, entries[0]!), "utf8")), state);
 });
+
+test("default state directory treats empty environment overrides as unset", async () => {
+  const fx = fixture();
+  const stateHome = mkdtempSync(join(tmpdir(), "coding-agents-tmux-empty-state-env-"));
+  const previousStateDir = process.env.CODING_AGENTS_TMUX_STATE_DIR;
+  const previousStateHome = process.env.XDG_STATE_HOME;
+  process.env.CODING_AGENTS_TMUX_STATE_DIR = "";
+  process.env.XDG_STATE_HOME = `  ${stateHome}  `;
+
+  try {
+    const cleanup = await setupPanePlugin(fx.context, {
+      navigationPollMs: 1_000,
+      reconcileMs: 1_000,
+      paneId: "%7",
+      resolveTarget: () => "dev:1.2",
+      scheduleTmuxRefresh: () => undefined,
+    });
+    cleanup();
+
+    const stateDir = join(stateHome, "coding-agents-tmux", "plugin-state");
+    assert.deepEqual(readdirSync(stateDir), [`pane-${Buffer.from("%7").toString("hex")}.json`]);
+  } finally {
+    if (previousStateDir === undefined) delete process.env.CODING_AGENTS_TMUX_STATE_DIR;
+    else process.env.CODING_AGENTS_TMUX_STATE_DIR = previousStateDir;
+    if (previousStateHome === undefined) delete process.env.XDG_STATE_HOME;
+    else process.env.XDG_STATE_HOME = previousStateHome;
+  }
+});

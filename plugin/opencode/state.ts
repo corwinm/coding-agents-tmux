@@ -119,9 +119,9 @@ function normalizeEnvValue(value: string | undefined): string | null {
 
 function defaultStateDir(): string {
   return (
-    process.env.CODING_AGENTS_TMUX_STATE_DIR ??
+    normalizeEnvValue(process.env.CODING_AGENTS_TMUX_STATE_DIR) ??
     join(
-      process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
+      normalizeEnvValue(process.env.XDG_STATE_HOME) ?? join(homedir(), ".local", "state"),
       "coding-agents-tmux",
       "plugin-state",
     )

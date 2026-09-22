@@ -3,13 +3,9 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const STATE_DIR =
-  process.env.CODING_AGENTS_TMUX_STATE_DIR ??
-  join(
-    process.env.XDG_STATE_HOME ?? join(homedir(), ".local", "state"),
-    "coding-agents-tmux",
-    "plugin-state",
-  );
+const stateDirOverride = process.env.CODING_AGENTS_TMUX_STATE_DIR?.trim();
+const stateHome = process.env.XDG_STATE_HOME?.trim() || join(homedir(), ".local", "state");
+const STATE_DIR = stateDirOverride || join(stateHome, "coding-agents-tmux", "plugin-state");
 
 let tmuxRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
