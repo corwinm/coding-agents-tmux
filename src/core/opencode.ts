@@ -528,7 +528,10 @@ function getDescendantPluginState(
 
   const normalizedDirectory = directory.endsWith("/") ? directory : `${directory}/`;
   const states = index.states.filter(
-    (state) => state.directory?.startsWith(normalizedDirectory) && isFreshV2PluginState(state),
+    (state) =>
+      state.directory?.startsWith(normalizedDirectory) &&
+      isFreshV2PluginState(state) &&
+      (state.opencodeGeneration !== "v2" || (!state.paneId && !state.target)),
   );
 
   let match: PluginStateFile | null = null;

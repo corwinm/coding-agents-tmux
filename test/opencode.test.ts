@@ -269,6 +269,32 @@ test("plugin provider rejects stale V2 pane-bound state", async () => {
   }
 });
 
+test("plugin provider does not reuse rejected V2 pane state as a descendant match", async () => {
+  const pluginStateDir = createPluginStateDir([
+    {
+      opencodeGeneration: "v2",
+      target: "work:1.0",
+      paneId: "%1",
+      directory: "/tmp/project/subdirectory",
+      title: "Previous pane occupant",
+      sessionId: "previous-root",
+      status: "running",
+      activity: "busy",
+      updatedAt: Date.now(),
+    },
+  ]);
+  const restoreEnv = setEnv({ CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir });
+
+  try {
+    const [summary] = await attachRuntimeToPanes([createDiscoveredPane()], { provider: "plugin" });
+
+    assert.equal(summary?.runtime.status, "unknown");
+    assert.equal(summary?.runtime.match.provider, "none");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("plugin provider uses safe descendant heuristics and leaves ambiguous panes unmapped", async () => {
   const pluginStateDir = createPluginStateDir([
     {
