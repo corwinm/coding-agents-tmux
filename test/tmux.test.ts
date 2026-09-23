@@ -407,6 +407,90 @@ esac
   }
 });
 
+test("discoverAgentPanes detects a foreground Copilot child of gh copilot", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then
+  printf 'work\t1\t0\t%%1\tGitHub Copilot\tgh\t/tmp/project\t1\t/dev/ttys001\n'
+  exit 0
+fi
+exit 1
+`);
+  const psPath = join(fakeTmux.pathEntry, "ps");
+  writeFileSync(
+    psPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf ' 100 1 100 100 gh copilot\n'
+printf ' 101 100 100 100 /home/user/.local/share/gh/copilot/copilot\n'
+`,
+    "utf8",
+  );
+  chmodSync(psPath, 0o755);
+  const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+  try {
+    const panes = await discoverAgentPanes();
+    assert.equal(panes.length, 1);
+    assert.equal(panes[0]?.detection.agent, "copilot");
+    assert.deepEqual(panes[0]?.detection.reasons, ["process:gh-copilot"]);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("gh panes require a foreground direct Copilot child, not a title or unrelated process", async () => {
+  const cases = [
+    {
+      name: "different gh subcommand",
+      parent: "gh issue view copilot",
+      child: "/bin/copilot",
+      ppid: 100,
+      pgid: 100,
+    },
+    {
+      name: "unrelated child",
+      parent: "gh copilot",
+      child: "/bin/copilot-helper",
+      ppid: 100,
+      pgid: 100,
+    },
+    { name: "background child", parent: "gh copilot", child: "/bin/copilot", ppid: 100, pgid: 200 },
+    { name: "unrelated parent", parent: "gh copilot", child: "/bin/copilot", ppid: 999, pgid: 100 },
+    {
+      name: "prose argument",
+      parent: "gh copilot",
+      child: "/bin/bash -c copilot",
+      ppid: 100,
+      pgid: 100,
+    },
+  ];
+  for (const example of cases) {
+    const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then
+  printf 'work\t1\t0\t%%1\tGitHub Copilot\tgh\t/tmp/project\t1\t/dev/ttys001\n'
+  exit 0
+fi
+exit 1
+`);
+    const psPath = join(fakeTmux.pathEntry, "ps");
+    writeFileSync(
+      psPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf ' 100 1 100 100 ${example.parent}\n'
+printf ' 101 ${example.ppid} ${example.pgid} 100 ${example.child}\n'
+`,
+      "utf8",
+    );
+    chmodSync(psPath, 0o755);
+    const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+    try {
+      assert.deepEqual(await discoverAgentPanes(), [], example.name);
+    } finally {
+      restoreEnv();
+    }
+  }
+});
+
 test("background Copilot cannot take over a foreground wrapped Codex pane", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then

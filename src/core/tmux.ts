@@ -388,6 +388,43 @@ export function discoverAgentPanesFromList(panes: TmuxPane[]): DiscoveredPane[] 
 }
 
 async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetection | null> {
+  if (matchesCommand(pane.currentCommand.toLowerCase(), "gh")) {
+    const { stdoutText, exitCode } = await runCommand([
+      "ps",
+      "-t",
+      pane.tty,
+      "-o",
+      "pid=,ppid=,pgid=,tpgid=,args=",
+    ]);
+    if (exitCode !== 0) return null;
+    const processes = stdoutText.split("\n").flatMap((line) => {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+      return match
+        ? [{ pid: match[1]!, ppid: match[2]!, pgid: match[3]!, tpgid: match[4]!, args: match[5]! }]
+        : [];
+    });
+    const launchers = processes.filter(
+      (process) =>
+        process.pgid === process.tpgid &&
+        process.tpgid !== "0" &&
+        /^(?:[^\s]*[\\/])?gh(?:\.exe)?\s+copilot(?:\s|$)/i.test(process.args),
+    );
+    const children = processes.filter(
+      (process) =>
+        process.pgid === process.tpgid &&
+        process.tpgid !== "0" &&
+        /^(?:[^\s]*[\\/])?copilot(?:\.exe)?(?:\s|$)/i.test(process.args),
+    );
+    if (
+      launchers.length === 1 &&
+      children.length === 1 &&
+      children[0]?.ppid === launchers[0]?.pid &&
+      children[0]?.pgid === launchers[0]?.pgid
+    ) {
+      return { agent: "copilot", confidence: "medium", reasons: ["process:gh-copilot"] };
+    }
+    return null;
+  }
   if (!isLikelyCodexWrapperProcess(pane.currentCommand.toLowerCase())) {
     return null;
   }
