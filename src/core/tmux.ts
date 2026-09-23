@@ -388,6 +388,57 @@ export function discoverAgentPanesFromList(panes: TmuxPane[]): DiscoveredPane[] 
 }
 
 async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetection | null> {
+  if (matchesCommand(pane.currentCommand.toLowerCase(), "gh")) {
+    const { stdoutText, exitCode } = await runCommand([
+      "ps",
+      "-t",
+      pane.tty,
+      "-o",
+      "pid=,ppid=,pgid=,tpgid=,args=",
+      "-ww",
+    ]);
+    if (exitCode !== 0) return null;
+    const processes = stdoutText.split("\n").flatMap((line) => {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(.+)$/);
+      return match
+        ? [{ pid: match[1]!, ppid: match[2]!, pgid: match[3]!, tpgid: match[4]!, args: match[5]! }]
+        : [];
+    });
+    const launchers = processes.filter(
+      (process) =>
+        process.pgid === process.tpgid &&
+        process.tpgid !== "0" &&
+        /^(?:[^\s]*[\\/])?gh(?:\.exe)?\s+copilot(?:\s|$)/i.test(process.args),
+    );
+    const children = processes.filter(
+      (process) =>
+        process.pgid === process.tpgid &&
+        process.tpgid !== "0" &&
+        /^(?:[^\s]*[\\/])?copilot(?:\.exe)?(?:\s|$)/i.test(process.args),
+    );
+    const wrappers = processes.filter(
+      (process) =>
+        process.pgid === process.tpgid &&
+        process.tpgid !== "0" &&
+        /^(?:[^\s]*[\\/])?node(?:\.exe)?\s+[^\s]+[\\/]\.bin[\\/]copilot(?:\.exe)?(?:\s|$)/i.test(
+          process.args,
+        ),
+    );
+    const launcher = launchers.length === 1 ? launchers[0] : null;
+    const direct = children.filter(
+      (child) => child.ppid === launcher?.pid && child.pgid === launcher?.pgid,
+    );
+    const wrapped = wrappers.filter(
+      (wrapper) =>
+        wrapper.ppid === launcher?.pid &&
+        wrapper.pgid === launcher?.pgid &&
+        children.some((child) => child.ppid === wrapper.pid && child.pgid === wrapper.pgid),
+    );
+    if (launcher && direct.length + wrapped.length === 1 && children.length === 1) {
+      return { agent: "copilot", confidence: "medium", reasons: ["process:gh-copilot"] };
+    }
+    return null;
+  }
   if (!isLikelyCodexWrapperProcess(pane.currentCommand.toLowerCase())) {
     return null;
   }
@@ -398,6 +449,7 @@ async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetec
     pane.tty,
     "-o",
     "pgid=,tpgid=,args=",
+    "-ww",
   ]);
 
   if (exitCode !== 0) return null;
