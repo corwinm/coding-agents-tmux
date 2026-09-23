@@ -63,6 +63,7 @@ export type RuntimeSource =
   | "claude-command"
   | "kiro-preview"
   | "kiro-command"
+  | "copilot-hook"
   | "copilot-command"
   | "unmapped";
 

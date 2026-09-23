@@ -7,7 +7,7 @@ import {
   getPluginStateDir,
 } from "./opencode.ts";
 import { attachRuntimeWithPi } from "./pi.ts";
-import { attachRuntimeWithCopilot } from "./copilot.ts";
+import { attachRuntimeWithCopilot, getCopilotStateDir } from "./copilot.ts";
 import { PRIMARY_CLI_NAME } from "../naming.ts";
 import type { DiscoveredPane, PaneRuntimeSummary, RuntimeProviderOptions } from "../types.ts";
 
@@ -66,6 +66,12 @@ export function getRuntimeProviderHelpText(): string {
     "  Override with CODING_AGENTS_TMUX_CLAUDE_STATE_DIR.",
     `  Generate settings hooks with: ${PRIMARY_CLI_NAME} claude-hooks-template`,
     `  Install global Claude hooks with: ${PRIMARY_CLI_NAME} install-claude`,
+    "",
+    "Copilot CLI hook state (optional, CLI-local):",
+    `  Default path: ${getCopilotStateDir()}`,
+    "  Override with CODING_AGENTS_TMUX_COPILOT_STATE_DIR.",
+    `  Preview hooks with: ${PRIMARY_CLI_NAME} copilot-hooks-template`,
+    `  Explicitly install user hooks with: ${PRIMARY_CLI_NAME} install-copilot`,
     "",
     "Server map:",
     "  Pass --server-map with a JSON object or a path to a JSON file.",
