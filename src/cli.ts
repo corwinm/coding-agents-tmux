@@ -26,6 +26,11 @@ import {
   installCodexIntegration,
   persistCodexHookState,
 } from "./core/codex.ts";
+import {
+  buildCopilotHooksTemplate,
+  installCopilotIntegration,
+  persistCopilotHookState,
+} from "./core/copilot.ts";
 import { notifyIntegration } from "./core/notifications.ts";
 import { detectOpenCodeVersion } from "./core/opencode-generation.ts";
 import { installOpenCodeIntegration } from "./core/opencode-install.ts";
@@ -642,6 +647,16 @@ async function runInstallClaudeCommand(_options: InstallClaudeOptions): Promise<
   console.log("Restart Claude Code sessions so new hooks are loaded");
 }
 
+async function runCopilotHookStateCommand(eventName: string): Promise<void> {
+  await persistCopilotHookState(await readStdinText(), { eventName });
+}
+
+async function runInstallCopilotCommand(): Promise<void> {
+  const result = installCopilotIntegration(CLI_PATH);
+  console.log(`Updated ${result.hooksPath}`);
+  console.log("Restart Copilot CLI sessions so new hooks are loaded");
+}
+
 async function runInstallOpenCodeCommand(_options: InstallOpenCodeOptions): Promise<void> {
   const detected = await detectOpenCodeVersion();
   const result = installOpenCodeIntegration(detected);
@@ -1009,6 +1024,22 @@ async function main(): Promise<void> {
     .command("install-claude")
     .description("Install or update Claude Code hook configuration under ~/.claude")
     .action(runInstallClaudeCommand);
+
+  program
+    .command("copilot-hooks-template")
+    .description("Print optional user-level Copilot CLI hook configuration")
+    .action(() => console.log(buildCopilotHooksTemplate(CLI_PATH)));
+
+  program
+    .command("copilot-hook-state")
+    .description("Ingest a Copilot CLI hook event from stdin (used by installed hooks)")
+    .argument("<event>", "Copilot CLI lifecycle event name")
+    .action(runCopilotHookStateCommand);
+
+  program
+    .command("install-copilot")
+    .description("Explicitly install Copilot CLI user-level hooks; never run automatically")
+    .action(runInstallCopilotCommand);
 
   program
     .command("popup")

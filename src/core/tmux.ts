@@ -110,6 +110,18 @@ function processArgsContainCodex(stdoutText: string): boolean {
     .some((line) => line.split(/\s+/).some((token) => isCodexProcessToken(token)));
 }
 
+function processArgsContainCopilot(stdoutText: string): boolean {
+  return stdoutText.split("\n").some((line) =>
+    line.split(/\s+/).some((token) => {
+      const normalized = token.toLowerCase().replace(/^['"]+|['",;:]+$/g, "");
+      return (
+        /(?:^|[\\/])\.bin[\\/]copilot(?:\.exe)?$/.test(normalized) ||
+        /(?:^|[\\/])@github[\\/]copilot(?:-[a-z0-9-]+)?[\\/]copilot(?:\.exe)?$/.test(normalized)
+      );
+    }),
+  );
+}
+
 // Recent Claude Code releases rename their process so tmux reports the version
 // string (e.g. "2.1.206") as pane_current_command instead of "claude".
 function isClaudeVersionCommand(command: string): boolean {
@@ -380,11 +392,28 @@ async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetec
     return null;
   }
 
-  const { stdoutText, exitCode } = await runCommand(["ps", "-t", pane.tty, "-o", "args="]);
+  const { stdoutText, exitCode } = await runCommand([
+    "ps",
+    "-t",
+    pane.tty,
+    "-o",
+    "pgid=,tpgid=,args=",
+  ]);
 
-  if (exitCode !== 0 || !processArgsContainCodex(stdoutText)) {
-    return null;
+  if (exitCode !== 0) return null;
+  const foregroundArgs = stdoutText
+    .split("\n")
+    .flatMap((line) => {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/);
+      return match && match[1] === match[2] && match[2] !== "0" ? [match[3]] : [];
+    })
+    .join("\n");
+  if (processArgsContainCopilot(foregroundArgs) && processArgsContainCodex(foregroundArgs))
+    return null; // Do not guess when competing agents share a foreground group.
+  if (processArgsContainCopilot(foregroundArgs)) {
+    return { agent: "copilot", confidence: "medium", reasons: ["process:copilot"] };
   }
+  if (!processArgsContainCodex(foregroundArgs)) return null;
 
   return {
     agent: "codex",
