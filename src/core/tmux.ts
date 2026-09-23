@@ -415,12 +415,25 @@ async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetec
         process.tpgid !== "0" &&
         /^(?:[^\s]*[\\/])?copilot(?:\.exe)?(?:\s|$)/i.test(process.args),
     );
-    if (
-      launchers.length === 1 &&
-      children.length === 1 &&
-      children[0]?.ppid === launchers[0]?.pid &&
-      children[0]?.pgid === launchers[0]?.pgid
-    ) {
+    const wrappers = processes.filter(
+      (process) =>
+        process.pgid === process.tpgid &&
+        process.tpgid !== "0" &&
+        /^(?:[^\s]*[\\/])?node(?:\.exe)?\s+[^\s]+[\\/]\.bin[\\/]copilot(?:\.exe)?(?:\s|$)/i.test(
+          process.args,
+        ),
+    );
+    const launcher = launchers.length === 1 ? launchers[0] : null;
+    const direct = children.filter(
+      (child) => child.ppid === launcher?.pid && child.pgid === launcher?.pgid,
+    );
+    const wrapped = wrappers.filter(
+      (wrapper) =>
+        wrapper.ppid === launcher?.pid &&
+        wrapper.pgid === launcher?.pgid &&
+        children.some((child) => child.ppid === wrapper.pid && child.pgid === wrapper.pgid),
+    );
+    if (launcher && direct.length + wrapped.length === 1 && children.length === 1) {
       return { agent: "copilot", confidence: "medium", reasons: ["process:gh-copilot"] };
     }
     return null;

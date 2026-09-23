@@ -437,6 +437,70 @@ printf ' 101 100 100 100 /home/user/.local/share/gh/copilot/copilot\n'
   }
 });
 
+test("discoverAgentPanes detects an npm-wrapped Copilot child of gh copilot", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then
+  printf 'work\t1\t0\t%%1\tGitHub Copilot\tgh\t/tmp/project\t1\t/dev/ttys001\n'
+  exit 0
+fi
+exit 1
+`);
+  const psPath = join(fakeTmux.pathEntry, "ps");
+  writeFileSync(
+    psPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf ' 100 1 100 100 gh copilot\n'
+printf ' 101 100 100 100 /opt/node /tmp/node_modules/.bin/copilot\n'
+printf ' 102 101 100 100 /tmp/node_modules/@github/copilot-darwin-arm64/copilot\n'
+`,
+    "utf8",
+  );
+  chmodSync(psPath, 0o755);
+  const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+  try {
+    const panes = await discoverAgentPanes();
+    assert.equal(panes.length, 1);
+    assert.deepEqual(panes[0]?.detection.reasons, ["process:gh-copilot"]);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("gh npm wrapper requires a foreground Copilot descendant", async () => {
+  for (const descendant of [
+    "",
+    "printf ' 102 101 200 100 /tmp/node_modules/@github/copilot-darwin-arm64/copilot\\n'",
+    "printf ' 102 101 100 100 /bin/copilot-helper\\n'",
+  ]) {
+    const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then
+  printf 'work\t1\t0\t%%1\tGitHub Copilot\tgh\t/tmp/project\t1\t/dev/ttys001\n'
+  exit 0
+fi
+exit 1
+`);
+    const psPath = join(fakeTmux.pathEntry, "ps");
+    writeFileSync(
+      psPath,
+      `#!/usr/bin/env bash
+set -euo pipefail
+printf ' 100 1 100 100 gh copilot\n'
+printf ' 101 100 100 100 /opt/node /tmp/node_modules/.bin/copilot\n'
+${descendant}
+`,
+      "utf8",
+    );
+    chmodSync(psPath, 0o755);
+    const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+    try {
+      assert.deepEqual(await discoverAgentPanes(), []);
+    } finally {
+      restoreEnv();
+    }
+  }
+});
+
 test("gh panes require a foreground direct Copilot child, not a title or unrelated process", async () => {
   const cases = [
     {
