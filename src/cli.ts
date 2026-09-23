@@ -1038,7 +1038,9 @@ async function main(): Promise<void> {
 
   program
     .command("install-copilot")
-    .description("Explicitly install Copilot CLI user-level hooks; never run automatically")
+    .description(
+      "Install Copilot CLI user-level hooks directly or through opt-in tmux auto-install",
+    )
     .action(runInstallCopilotCommand);
 
   program
