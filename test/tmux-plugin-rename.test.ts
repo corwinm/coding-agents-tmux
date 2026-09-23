@@ -6,6 +6,7 @@ import {
   mkdtempSync,
   readlinkSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -304,7 +305,7 @@ exit 1
   }
 });
 
-test("coding-agents-tmux.tmux honors @coding-agents-tmux-auto-install lists including claude", async () => {
+test("coding-agents-tmux.tmux honors @coding-agents-tmux-auto-install lists including claude and copilot", async () => {
   const fakeTmux = installFakeTmux(`
 log_path='__LOG_PATH__'
 option="\${!#}"
@@ -319,7 +320,7 @@ show-option)
       printf 'off\n'
       ;;
     @coding-agents-tmux-auto-install)
-      printf 'pi,claude\n'
+      printf '%s\n' "\${AUTO_INSTALL_SELECTION:-pi,claude,copilot}"
       ;;
   esac
   exit 0
@@ -338,6 +339,7 @@ exit 1
   const piHome = join(home, ".pi-home");
   const codexHome = join(home, ".codex-home");
   const claudeHome = join(home, ".claude-home");
+  const copilotHome = join(home, ".copilot-home");
   installFakeNpm(fakeTmux.pathEntry);
   const restoreEnv = setEnv({
     HOME: home,
@@ -346,6 +348,8 @@ exit 1
     PI_CODING_AGENT_DIR: piHome,
     CODEX_HOME: codexHome,
     CLAUDE_HOME: claudeHome,
+    COPILOT_HOME: copilotHome,
+    AUTO_INSTALL_SELECTION: "pi,claude",
   });
 
   try {
@@ -353,15 +357,28 @@ exit 1
     const newPluginPath = join(configHome, "opencode", "plugins", "coding-agents-tmux.ts");
     const newPiExtensionPath = join(piHome, "extensions", "coding-agents-tmux", "index.ts");
     const claudeSettingsPath = join(claudeHome, "settings.json");
+    const copilotHooksPath = join(copilotHome, "hooks", "coding-agents-tmux.json");
     const codexHooksPath = join(codexHome, "hooks.json");
 
     assert.equal(result.exitCode, 0);
     assert.equal(result.stderrText.trim(), "");
+    assert.equal(existsSync(copilotHooksPath), false);
+    process.env.AUTO_INSTALL_SELECTION = "pi,claude,copilot";
+    const optedIn = await runCommand([join(process.cwd(), "coding-agents-tmux.tmux")]);
+    assert.equal(optedIn.exitCode, 0);
+    assert.equal(optedIn.stderrText.trim(), "");
     assert.equal(existsSync(newPluginPath), false);
     assert.ok(existsSync(newPiExtensionPath));
     assert.ok(existsSync(claudeSettingsPath));
+    assert.ok(existsSync(copilotHooksPath));
     assert.equal(existsSync(codexHooksPath), false);
     assert.match(readFileSync(claudeSettingsPath, "utf8"), /claude-hook-state/);
+    assert.match(readFileSync(copilotHooksPath, "utf8"), /copilot-hook-state/);
+    rmSync(copilotHooksPath);
+    process.env.AUTO_INSTALL_SELECTION = "auto";
+    const all = await runCommand([join(process.cwd(), "coding-agents-tmux.tmux")]);
+    assert.equal(all.exitCode, 0);
+    assert.ok(existsSync(copilotHooksPath));
   } finally {
     restoreEnv();
   }
