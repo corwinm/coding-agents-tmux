@@ -395,6 +395,7 @@ async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetec
       pane.tty,
       "-o",
       "pid=,ppid=,pgid=,tpgid=,args=",
+      "-ww",
     ]);
     if (exitCode !== 0) return null;
     const processes = stdoutText.split("\n").flatMap((line) => {
@@ -448,6 +449,7 @@ async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetec
     pane.tty,
     "-o",
     "pgid=,tpgid=,args=",
+    "-ww",
   ]);
 
   if (exitCode !== 0) return null;

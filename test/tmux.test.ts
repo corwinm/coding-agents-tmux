@@ -381,6 +381,7 @@ exit 1
     psPath,
     `#!/usr/bin/env bash
 set -euo pipefail
+[ "\${5:-}" = "-ww" ] || exit 1
 case "$2" in
   /dev/ttys001)
     printf ' 100 100 /opt/node /tmp/copilot-spike/node_modules/.bin/copilot --no-auto-update\n'
@@ -420,6 +421,7 @@ exit 1
     psPath,
     `#!/usr/bin/env bash
 set -euo pipefail
+[ "\${5:-}" = "-ww" ] || exit 1
 printf ' 100 1 100 100 gh copilot\n'
 printf ' 101 100 100 100 /home/user/.local/share/gh/copilot/copilot\n'
 `,
