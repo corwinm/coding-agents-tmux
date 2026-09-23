@@ -332,15 +332,15 @@ exit 1
 set -euo pipefail
 case "$2" in
   /dev/ttys001)
-    printf '/opt/node /Users/example/.npm/bin/codex\n'
+    printf ' 100 100 /opt/node /Users/example/.npm/bin/codex\n'
     exit 0
     ;;
   /dev/ttys002)
-    printf '/opt/node /Users/example/.pnpm/global/5/node_modules/@openai/codex/bin/codex.js\n'
+    printf ' 200 200 /opt/node /Users/example/.pnpm/global/5/node_modules/@openai/codex/bin/codex.js\n'
     exit 0
     ;;
   /dev/ttys003)
-    printf '/opt/node /tmp/codex-project/scripts/dev.js\n'
+    printf ' 300 300 /opt/node /tmp/codex-project/scripts/dev.js\n'
     exit 0
     ;;
 esac
@@ -383,8 +383,8 @@ exit 1
 set -euo pipefail
 case "$2" in
   /dev/ttys001)
-    printf '/opt/node /tmp/copilot-spike/node_modules/.bin/copilot --no-auto-update\n'
-    printf '/tmp/copilot-spike/node_modules/@github/copilot-darwin-arm64/copilot\n'
+    printf ' 100 100 /opt/node /tmp/copilot-spike/node_modules/.bin/copilot --no-auto-update\n'
+    printf ' 100 100 /tmp/copilot-spike/node_modules/@github/copilot-darwin-arm64/copilot\n'
     ;;
   /dev/ttys002)
     printf '/opt/node /tmp/project/scripts/copilot-notes.js\n'
@@ -402,6 +402,34 @@ esac
       ["work:1.0"],
     );
     assert.equal(panes[0]?.detection.agent, "copilot");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("background Copilot cannot take over a foreground wrapped Codex pane", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then
+  printf 'work\t1\t0\t%%1\tproject\tnode\t/tmp/project\t1\t/dev/ttys001\n'
+  exit 0
+fi
+exit 1
+`);
+  const psPath = join(fakeTmux.pathEntry, "ps");
+  writeFileSync(
+    psPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+printf ' 100 200 /opt/node /tmp/node_modules/.bin/copilot\n'
+printf ' 200 200 /opt/node /tmp/node_modules/@openai/codex/bin/codex.js\n'
+`,
+    "utf8",
+  );
+  chmodSync(psPath, 0o755);
+  const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+  try {
+    const panes = await discoverAgentPanes();
+    assert.equal(panes[0]?.detection.agent, "codex");
   } finally {
     restoreEnv();
   }

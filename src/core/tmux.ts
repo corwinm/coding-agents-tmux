@@ -392,16 +392,28 @@ async function detectAgentPaneFromProcessArgs(pane: TmuxPane): Promise<PaneDetec
     return null;
   }
 
-  const { stdoutText, exitCode } = await runCommand(["ps", "-t", pane.tty, "-o", "args="]);
+  const { stdoutText, exitCode } = await runCommand([
+    "ps",
+    "-t",
+    pane.tty,
+    "-o",
+    "pgid=,tpgid=,args=",
+  ]);
 
-  if (exitCode !== 0) {
-    return null;
-  }
-
-  if (processArgsContainCopilot(stdoutText)) {
+  if (exitCode !== 0) return null;
+  const foregroundArgs = stdoutText
+    .split("\n")
+    .flatMap((line) => {
+      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/);
+      return match && match[1] === match[2] && match[2] !== "0" ? [match[3]] : [];
+    })
+    .join("\n");
+  if (processArgsContainCopilot(foregroundArgs) && processArgsContainCodex(foregroundArgs))
+    return null; // Do not guess when competing agents share a foreground group.
+  if (processArgsContainCopilot(foregroundArgs)) {
     return { agent: "copilot", confidence: "medium", reasons: ["process:copilot"] };
   }
-  if (!processArgsContainCodex(stdoutText)) return null;
+  if (!processArgsContainCodex(foregroundArgs)) return null;
 
   return {
     agent: "codex",
