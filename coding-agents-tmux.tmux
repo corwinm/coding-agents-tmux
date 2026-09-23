@@ -365,6 +365,12 @@ install_claude_hooks() {
   fi
 }
 
+install_copilot_hooks() {
+  if ! "$CURRENT_DIR/bin/coding-agents-tmux" install-copilot >/dev/null 2>&1; then
+    tmux display-message "coding-agents-tmux: failed to install Copilot CLI hook configuration"
+  fi
+}
+
 install_pi_extension() {
   local extension_source pi_dir extension_dir extension_target existing_target installed_changed
 
@@ -395,7 +401,7 @@ install_pi_extension() {
 }
 
 main() {
-  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex install_pi install_claude auto_install_value status_text_segment status_inline_segment status_tone_segment status_refresh_command
+  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex install_pi install_claude install_copilot auto_install_value status_text_segment status_inline_segment status_tone_segment status_refresh_command
   local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown notify_command
   local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key
   menu_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-menu-key' 'O')")"
@@ -418,18 +424,21 @@ main() {
         install_codex='on'
         install_pi='on'
         install_claude='on'
+        install_copilot='on'
         ;;
       off|"")
         install_plugin='off'
         install_codex='off'
         install_pi='off'
         install_claude='off'
+        install_copilot='off'
         ;;
       *)
         install_plugin='off'
         install_codex='off'
         install_pi='off'
         install_claude='off'
+        install_copilot='off'
 
         if auto_install_includes "$auto_install_value" 'opencode'; then
           install_plugin='on'
@@ -446,6 +455,9 @@ main() {
         if auto_install_includes "$auto_install_value" 'claude'; then
           install_claude='on'
         fi
+        if auto_install_includes "$auto_install_value" 'copilot'; then
+          install_copilot='on'
+        fi
         ;;
     esac
   else
@@ -453,6 +465,7 @@ main() {
     install_codex="$(normalize_toggle "$(get_tmux_option '@coding-agents-tmux-install-codex-hooks' 'on')")"
     install_pi="$(normalize_toggle "$(get_tmux_option '@coding-agents-tmux-install-pi-extension' 'on')")"
     install_claude="$(normalize_toggle "$(get_tmux_option '@coding-agents-tmux-install-claude-hooks' 'off')")"
+    install_copilot='off'
   fi
   status_enabled="$(get_tmux_option '@coding-agents-tmux-status' 'on')"
   status_style="$(get_tmux_option '@coding-agents-tmux-status-style' 'tmux')"
@@ -496,6 +509,9 @@ main() {
 
   if [ "$install_claude" = "on" ]; then
     install_claude_hooks
+  fi
+  if [ "$install_copilot" = "on" ]; then
+    install_copilot_hooks
   fi
 
   local popup_filter_arg=""

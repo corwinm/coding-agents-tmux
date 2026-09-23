@@ -412,6 +412,10 @@ test("CLI help and tmux-config work through the entrypoint script", async () => 
   assert.equal(helpResult.exitCode, 0);
   assert.match(helpResult.stdoutText, /Usage: coding-agents-tmux/);
   assert.match(helpResult.stdoutText, /tmux-config/);
+  const copilotHelp = await runCommand([BIN_PATH, "install-copilot", "--help"]);
+  assert.equal(copilotHelp.exitCode, 0);
+  assert.match(copilotHelp.stdoutText, /opt-in tmux\s+auto-install/);
+  assert.doesNotMatch(copilotHelp.stdoutText, /never run automatically/);
   assert.equal(configResult.exitCode, 0);
   assert.match(configResult.stdoutText, /# >>> coding-agents-tmux >>>/);
   assert.match(configResult.stdoutText, /--provider/);

@@ -27,7 +27,7 @@ Recommended settings:
 
 ```tmux
 set -g @coding-agents-tmux-provider 'plugin'
-set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude'
+set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude,copilot'
 set -g @coding-agents-tmux-menu-key 'O'
 set -g @coding-agents-tmux-popup-key 'P'
 set -g @coding-agents-tmux-waiting-menu-key 'W'
@@ -125,7 +125,7 @@ It also installs or updates Codex hook integration under:
 ~/.codex/hooks.json
 ```
 
-With the recommended `@coding-agents-tmux-auto-install 'opencode,pi,codex,claude'` setting, it also installs or updates Claude Code hook integration under:
+With the recommended `@coding-agents-tmux-auto-install 'opencode,pi,codex,claude,copilot'` setting, it also installs or updates Claude Code hook integration under:
 
 ```text
 ~/.claude/settings.json
@@ -160,10 +160,10 @@ You can also control all tmux-managed installs together:
 ```tmux
 set -g @coding-agents-tmux-auto-install 'auto'
 set -g @coding-agents-tmux-auto-install 'off'
-set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude'
+set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude,copilot'
 ```
 
-The explicit `opencode,pi,codex,claude` list is the recommended README setting because it makes the intended managed installs obvious in your tmux config. When `@coding-agents-tmux-auto-install` is set, it takes precedence over the individual install toggles.
+The explicit `opencode,pi,codex,claude,copilot` list is the recommended README setting because it makes the intended managed installs obvious in your tmux config. When `@coding-agents-tmux-auto-install` is set, it takes precedence over the individual install toggles. Kiro CLI has no hook/extension installer; it uses pane and preview detection without an install step.
 
 ## Usage
 
@@ -468,7 +468,7 @@ set -g @coding-agents-tmux-install-claude-hooks 'on'
 or the shared selector:
 
 ```tmux
-set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude'
+set -g @coding-agents-tmux-auto-install 'opencode,pi,codex,claude,copilot'
 ```
 
 3. Optionally inspect the managed hook template before merging it into project or user Claude settings:
@@ -498,7 +498,7 @@ This means any `kiro-cli` pane can be discovered and switched to without naming 
 
 An interactive `copilot` process (or `copilot.exe` on Windows) in a tmux pane is discovered in `list`, the chooser/popup, and `status`. The `gh copilot` launcher is also discovered when its foreground process group contains a direct Copilot CLI child (or a known npm Node wrapper with a Copilot child); GitHub CLI's downloaded copy does not need a separate standalone installation. Use `--agent copilot` to filter navigation. No hooks are required: without them, activity and status remain `unknown` rather than guessing a wait. Title text, unrelated `gh` commands, and arbitrary `copilot-*` commands are not detected. The npm-installed CLI's Node wrapper is recognized by its executable path; generic wrapper support is tracked separately in #19.
 
-For optional, **local Copilot CLI only** turn and prompt state, preview the configuration with `coding-agents-tmux copilot-hooks-template`, then explicitly run `coding-agents-tmux install-copilot`. This creates only `${COPILOT_HOME:-~/.copilot}/hooks/coding-agents-tmux.json`; other user hooks are untouched. Restart existing Copilot CLI sessions so hooks load. Do not put these hooks in `.github/hooks/` (repository hooks also execute in Copilot cloud agent). The tmux plugin never auto-installs Copilot hooks.
+For optional, **local Copilot CLI only** turn and prompt state, add `copilot` to `@coding-agents-tmux-auto-install` (or use `auto`) to install/update the user-level hooks whenever the tmux plugin loads. You can preview the configuration with `coding-agents-tmux copilot-hooks-template` or install it directly with `coding-agents-tmux install-copilot`. This creates only `${COPILOT_HOME:-~/.copilot}/hooks/coding-agents-tmux.json`; other user hooks are untouched. Restart existing Copilot CLI sessions so hooks load. Do not put these hooks in `.github/hooks/` (repository hooks also execute in Copilot cloud agent). Leaving `copilot` out of the selector does not install hooks.
 
 The adapter correlates `TMUX_PANE`, the hook process's Copilot parent PID, and the Copilot `sessionId`, including concurrent sessions in one directory and `/clear` (which ends the old session and starts another). An exited or backgrounded Copilot process invalidates its hook state even if another CLI starts in the same pane. `userPromptSubmitted` means running; `agentStop` means idle. Only `notification` types `permission_prompt` and `elicitation_dialog` assert waiting-question and waiting-input respectively; automatic permission checks and `preToolUse` never assert a wait. An elicitation notification does not reveal whether its form contains multiple choices, so it is conservatively labeled input. Resolved prompts clear at the next turn boundary (`agentStop`); hooks do not expose an immediate resolution event, so the state can briefly lag after an answer. Hook state expires after 60 seconds without a subsequent event (including an unanswered prompt), reverting to the coarse navigable state instead of retaining a false wait. `inspect` reports hook source, age and expiry or command-only fallback. If hooks are disabled, folder trust blocks them, tmux pane identity is missing, or a hook is missed, no directory-only match is made. `COPILOT_HOME` selects the hook directory; `CODING_AGENTS_TMUX_COPILOT_STATE_DIR` overrides the local state directory. The integration neither grants permissions nor injects context.
 
