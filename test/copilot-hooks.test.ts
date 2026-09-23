@@ -46,7 +46,11 @@ test("hook events isolate same-directory panes and clear only resolved prompts",
       notify: async () => {},
     });
   const view = () =>
-    attachRuntimeWithCopilot([pane("%20"), pane("%21")], { stateDir: dir, now: start + 10_000 });
+    attachRuntimeWithCopilot([pane("%20"), pane("%21")], {
+      stateDir: dir,
+      now: start + 10_000,
+      isForeground: () => true,
+    });
   await ingest("%20", event("s1", start + 10, { event: "userPromptSubmitted" }));
   await ingest("%20", event("s1", start + 15, { event: "sessionStart", source: "startup" }));
   await ingest("%21", event("s2", start + 20, { event: "sessionStart", source: "startup" }));
@@ -88,7 +92,11 @@ test("automatically approved checks never wait; unmatched notifications do not c
       notify: async () => {},
     });
   const status = () =>
-    attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, now: start + 500 })[0]!.runtime.status;
+    attachRuntimeWithCopilot([pane("%20")], {
+      stateDir: dir,
+      now: start + 500,
+      isForeground: () => true,
+    })[0]!.runtime.status;
   await ingest(event("s1", start + 1, { event: "userPromptSubmitted" }));
   await ingest(event("s1", start + 2, { event: "preToolUse" }));
   await ingest(event("s1", start + 3, { event: "permissionRequest" }));
@@ -114,7 +122,8 @@ test("clear, late old-session hooks, stale waits, malformed events and missing p
       notify: async () => {},
     });
   const status = (now = start + 500) =>
-    attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, now })[0]!.runtime;
+    attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, now, isForeground: () => true })[0]!
+      .runtime;
   await ingest(
     event("old", start + 1, { event: "notification", notification_type: "permission_prompt" }),
   );
@@ -152,7 +161,11 @@ test("resuming a session clears stale waiting state but a late startup event pre
       notify: async () => {},
     });
   const status = () =>
-    attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, now: start + 500 })[0]!.runtime.status;
+    attachRuntimeWithCopilot([pane("%20")], {
+      stateDir: dir,
+      now: start + 500,
+      isForeground: () => true,
+    })[0]!.runtime.status;
   await ingest(
     event("s1", start + 1, { event: "notification", notification_type: "permission_prompt" }),
   );
@@ -175,10 +188,40 @@ test("state from an exited Copilot process cannot attach to a replacement in the
       notify: async () => {},
     },
   );
-  const runtime = attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, now: start + 20 })[0]!
-    .runtime;
+  const runtime = attachRuntimeWithCopilot([pane("%20")], {
+    stateDir: dir,
+    now: start + 20,
+    isForeground: () => true,
+  })[0]!.runtime;
   assert.equal(runtime.status, "unknown");
   assert.equal(runtime.source, "copilot-command");
+});
+
+test("suspended process state does not classify another foreground Copilot pane occupant", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-background-"));
+  await persistCopilotHookState(
+    event("s1", start + 1, { event: "notification", notification_type: "permission_prompt" }),
+    {
+      paneId: "%20",
+      stateDir: dir,
+      now: start + 5,
+      notify: async () => {},
+    },
+  );
+  const runtime = attachRuntimeWithCopilot([pane("%20")], {
+    stateDir: dir,
+    now: start + 10,
+    isForeground: () => false,
+  })[0]!.runtime;
+  assert.equal(runtime.status, "unknown");
+  assert.equal(runtime.session?.id, "copilot:work:1.0");
+  const stale = attachRuntimeWithCopilot([pane("%20")], {
+    stateDir: dir,
+    now: start + 120_000,
+    isForeground: () => true,
+  })[0]!.runtime;
+  assert.equal(stale.session?.id, "copilot:work:1.0");
+  assert.equal(stale.session?.timeUpdated, start + 120_000);
 });
 
 test("configured CLI hook args ingest real camelCase payloads without emitting decisions", () => {
@@ -204,7 +247,8 @@ test("configured CLI hook args ingest real camelCase payloads without emitting d
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, "");
   assert.equal(
-    attachRuntimeWithCopilot([pane("%20")], { stateDir: dir })[0]!.runtime.status,
+    attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, isForeground: () => true })[0]!.runtime
+      .status,
     "waiting-question",
   );
 });

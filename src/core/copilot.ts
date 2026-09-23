@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { basename, join } from "node:path";
 import { homedir } from "node:os";
 import {
@@ -227,9 +228,29 @@ function isProcessAlive(pid: number): boolean {
   }
 }
 
+function isForegroundProcess(pid: number, tty: string): boolean {
+  if (!tty.startsWith("/dev/")) return false;
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "pgid=,tpgid=,tty="], {
+    encoding: "utf8",
+    timeout: 500,
+  });
+  if (result.status !== 0) return false;
+  const match = result.stdout.trim().match(/^(\d+)\s+(\d+)\s+(\S+)$/);
+  return Boolean(
+    match &&
+    match[1] === match[2] &&
+    match[2] !== "0" &&
+    (match[3] === tty || `/dev/${match[3]}` === tty),
+  );
+}
+
 export function attachRuntimeWithCopilot(
   panes: DiscoveredPane[],
-  options: { stateDir?: string; now?: number } = {},
+  options: {
+    stateDir?: string;
+    now?: number;
+    isForeground?: (pid: number, tty: string) => boolean;
+  } = {},
 ): PaneRuntimeSummary[] {
   const now = options.now ?? Date.now();
   const dir = options.stateDir ?? getCopilotStateDir();
@@ -238,6 +259,7 @@ export function attachRuntimeWithCopilot(
     const matching =
       state?.directory === entry.pane.currentPath &&
       isProcessAlive(state.processPid) &&
+      (options.isForeground ?? isForegroundProcess)(state.processPid, entry.pane.tty) &&
       state.updatedAt <= now + CLOCK_SKEW_MS
         ? state
         : null;
@@ -256,10 +278,10 @@ export function attachRuntimeWithCopilot(
         source: fresh ? "copilot-hook" : "copilot-command",
         match: { strategy: "exact", provider: "copilot", heuristic: false },
         session: {
-          id: matching?.sessionId ?? `copilot:${entry.pane.target}`,
+          id: fresh ? matching.sessionId : `copilot:${entry.pane.target}`,
           directory: entry.pane.currentPath,
           title: basename(entry.pane.currentPath) || "Copilot CLI",
-          timeUpdated: matching?.updatedAt ?? now,
+          timeUpdated: fresh ? matching.updatedAt : now,
         },
         detail: fresh
           ? `Copilot ${matching.event} hook (${Math.max(0, now - matching.updatedAt)}ms old); expires after ${STATE_TTL_MS}ms`
