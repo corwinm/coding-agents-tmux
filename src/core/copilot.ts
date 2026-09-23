@@ -283,7 +283,10 @@ export function attachRuntimeWithCopilot(
       state.updatedAt <= now + CLOCK_SKEW_MS
         ? state
         : null;
-    const fresh = matching && now - matching.updatedAt < STATE_TTL_MS;
+    // A completed turn stays idle while its exact Copilot process owns the foreground pane.
+    // Busy and waiting states still expire if the resolution hook never arrives.
+    const fresh =
+      matching && (matching.status === "idle" || now - matching.updatedAt < STATE_TTL_MS);
     return {
       ...entry,
       runtime: {
@@ -304,7 +307,7 @@ export function attachRuntimeWithCopilot(
           timeUpdated: fresh ? matching.updatedAt : now,
         },
         detail: fresh
-          ? `Copilot ${matching.event} hook (${Math.max(0, now - matching.updatedAt)}ms old); expires after ${STATE_TTL_MS}ms`
+          ? `Copilot ${matching.event} hook (${Math.max(0, now - matching.updatedAt)}ms old); ${matching.status === "idle" ? "valid while the process remains foreground" : `expires after ${STATE_TTL_MS}ms`}`
           : matching
             ? `Copilot hook stale (${Math.max(0, now - matching.updatedAt)}ms old); command-only fallback`
             : "Copilot CLI process detected; hook state absent or disabled; command-only fallback",

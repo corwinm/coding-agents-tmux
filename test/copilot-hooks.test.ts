@@ -89,6 +89,27 @@ test("hook events isolate same-directory panes and clear only resolved prompts",
   );
 });
 
+test("idle hook state persists past the activity TTL only for the same foreground process", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-idle-"));
+  await persistCopilotHookState(event("s1", start + 1, { event: "agentStop" }), {
+    paneId: "%20",
+    stateDir: dir,
+    now: start + 2,
+    notify: async () => {},
+  });
+  const view = (foreground: boolean) =>
+    attachRuntimeWithCopilot([pane("%20")], {
+      stateDir: dir,
+      now: start + 120_000,
+      isForeground: () => foreground,
+    })[0]!.runtime;
+  assert.equal(view(true).status, "idle");
+  assert.equal(view(true).source, "copilot-hook");
+  assert.equal(view(true).session?.id, "s1");
+  assert.equal(view(false).status, "unknown");
+  assert.equal(view(false).source, "copilot-command");
+});
+
 test("automatically approved checks never wait; unmatched notifications do not clear genuine waits", async () => {
   const dir = mkdtempSync(join(tmpdir(), "copilot-hooks-"));
   const ingest = (payload: string) =>
