@@ -156,6 +156,7 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
   const piReasons: string[] = [];
   const claudeReasons: string[] = [];
   const kiroReasons: string[] = [];
+  const copilotReasons: string[] = [];
   const candidates: Array<{ agent: AgentKind; reasons: string[]; score: number }> = [];
 
   if (title === "OpenCode") {
@@ -222,6 +223,11 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
     kiroReasons.push("command:kiro");
   }
 
+  // Titles and paths may mention Copilot without running its CLI.
+  if (command === "copilot" || command === "copilot.exe") {
+    copilotReasons.push("command:copilot");
+  }
+
   if (opencodeReasons.some((reason) => !reason.startsWith("path:"))) {
     candidates.push({
       agent: "opencode",
@@ -271,6 +277,10 @@ export function detectAgentPane(pane: TmuxPane): PaneDetection {
           : 4
         : 4,
     });
+  }
+
+  if (copilotReasons.length > 0) {
+    candidates.push({ agent: "copilot", reasons: copilotReasons, score: 6 });
   }
 
   const detected = pickDetectedAgent(candidates);

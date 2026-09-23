@@ -83,7 +83,7 @@ interface PopupUiOptions extends SwitchOptions {}
 
 interface MenuOptions extends SwitchOptions {}
 
-interface StatusOptions extends RuntimeProviderOptions {
+interface StatusOptions extends RuntimeProviderOptions, PaneFilterOptions {
   json?: boolean;
   summary?: boolean;
   style?: "plain" | "tmux";
@@ -91,7 +91,7 @@ interface StatusOptions extends RuntimeProviderOptions {
 }
 
 interface TmuxConfigOptions extends RuntimeProviderOptions {
-  agent?: "all" | "opencode" | "codex" | "pi" | "claude" | "kiro";
+  agent?: PaneFilterOptions["agent"];
   menuKey?: string;
   popupKey?: string;
   waitingMenuKey?: string;
@@ -303,7 +303,8 @@ export function filterPaneSummaries(
     agent !== "codex" &&
     agent !== "pi" &&
     agent !== "claude" &&
-    agent !== "kiro"
+    agent !== "kiro" &&
+    agent !== "copilot"
   ) {
     throw new Error(`Invalid agent filter: ${agent}`);
   }
@@ -740,7 +741,7 @@ export function buildStatusOutput(
 }
 
 async function runStatusCommand(options: StatusOptions): Promise<void> {
-  const panes = await loadPaneRuntimeSummaries(options);
+  const panes = filterPaneSummaries(await loadPaneRuntimeSummaries(options), options);
   const tmuxAvailable = Boolean(process.env.TMUX);
   let currentTarget: PaneTarget | undefined;
 
@@ -898,7 +899,11 @@ async function main(): Promise<void> {
     .description("List likely coding agent tmux panes")
     .option("--compact", "Print tab-separated tmux-friendly output")
     .option("--json", "Print machine-readable JSON")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -939,7 +944,11 @@ async function main(): Promise<void> {
     .command("switch")
     .description("Switch tmux to one discovered coding agent pane")
     .argument("[target]", "Pane target in session:window.pane format")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -1004,7 +1013,11 @@ async function main(): Promise<void> {
   program
     .command("popup")
     .description("Open a tmux popup chooser for switching between discovered coding agent panes")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -1028,7 +1041,11 @@ async function main(): Promise<void> {
   program
     .command("popup-ui")
     .description("Run the interactive popup selector in the current terminal")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -1048,7 +1065,11 @@ async function main(): Promise<void> {
   program
     .command("menu")
     .description("Open the compact tmux menu for switching between discovered coding agent panes")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option("--provider <provider>", "Runtime provider: auto, plugin, sqlite, or server", "plugin")
     .option(
       "--server-map <value>",
@@ -1065,7 +1086,11 @@ async function main(): Promise<void> {
     .command("status")
     .description("Print a tmux-friendly status summary")
     .option("--json", "Print machine-readable JSON")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option(
       "--summary",
       "Summarize all discovered coding agent panes instead of the current tmux pane",
@@ -1091,7 +1116,11 @@ async function main(): Promise<void> {
   program
     .command("tmux-config")
     .description("Print a tmux config snippet for popup and status-line integration")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",
@@ -1119,7 +1148,11 @@ async function main(): Promise<void> {
   program
     .command("install-tmux")
     .description("Install or update a coding-agents-tmux snippet in a tmux config file")
-    .option("--agent <agent>", "Limit panes to all, opencode, codex, pi, claude, or kiro", "all")
+    .option(
+      "--agent <agent>",
+      "Limit panes to all, opencode, codex, pi, claude, kiro, or copilot",
+      "all",
+    )
     .option(
       "--provider <provider>",
       "Runtime provider: auto, plugin, sqlite, or server",

@@ -11,7 +11,7 @@ It helps you:
 - show the current pane state plus a background session summary in the status line
 - use local plugin and hook state instead of relying only on sqlite or pane heuristics
 
-This project was originally designed for `opencode` but has been extended to support `codex`, `pi`, `claude`, and `kiro` panes for discovery, switching, popup navigation, and status summaries.
+This project was originally designed for `opencode` but has been extended to support `codex`, `pi`, `claude`, `kiro`, and `copilot` panes for discovery, switching, popup navigation, and status summaries.
 
 Considering a dedicated agent multiplexer instead? See [how this plugin compares to Herdr](#how-this-compares-to-herdr).
 
@@ -494,6 +494,12 @@ Kiro runtime support is intentionally simple and does not require any Kiro agent
 
 This means any `kiro-cli` pane can be discovered and switched to without naming or modifying a Kiro custom agent.
 
+## GitHub Copilot CLI
+
+An interactive `copilot` process (or `copilot.exe` on Windows) in a tmux pane is discovered as Copilot in `list`, the chooser/popup, and `status`. Use `--agent copilot` to filter navigation; `inspect <target>` shows the command detection reason and confidence. No Copilot hooks or configuration are required.
+
+Copilot runtime state is deliberately coarse: its session identity comes from the tmux pane, while activity and status remain `unknown`. Merely running the CLI does not mean a turn is running or needs attention, so Copilot panes do not appear in `--busy`, `--running`, or `--waiting` views. Title text, arbitrary `copilot-*` commands, and wrapped launches are not detected; generic wrapper support is tracked separately in #19.
+
 ## How this compares to Herdr
 
 [coding-agents-tmux](https://github.com/corwinm/coding-agents-tmux) adds coding-agent awareness to an existing tmux setup. [Herdr](https://github.com/herdrdev/herdr) is a separate terminal multiplexer built around coding agents. They solve a similar navigation problem, but at different layers.
@@ -504,7 +510,7 @@ This means any `kiro-cli` pane can be discovered and switched to without naming 
 | Best fit                   | You already use tmux and want agent state, waiting-session shortcuts, and status-line integration without changing multiplexers | You want an agent-focused terminal runtime and are comfortable adopting a separate multiplexer                         |
 | Agent state                | Combines tmux pane metadata and captures with optional agent hooks, plugins, state files, and OpenCode providers                | Reads its own terminal buffers and foreground processes, with optional agent integrations reporting over its local API |
 | State detail               | Distinguishes running, idle, new, free-form input, multiple-choice questions, and unknown state                                 | Uses working, blocked, idle, and unknown pane states, with done derived for unseen completed work                      |
-| Agent coverage             | Focused support for OpenCode, Codex, Pi, Claude Code, and Kiro CLI                                                              | Broader built-in detection across many agent CLIs                                                                      |
+| Agent coverage             | Focused support for OpenCode, Codex, Pi, Claude Code, Kiro CLI, and Copilot CLI                                                 | Broader built-in detection across many agent CLIs                                                                      |
 | Navigation and UI          | tmux menus, popups, key bindings, status formats, and existing tmux themes                                                      | A dedicated agent sidebar and UI, plus its own CLI and socket API                                                      |
 | Persistence and remote use | Uses tmux persistence and whatever SSH, mosh, or tmux workflow you already have                                                 | Owns persistent terminal sessions and provides its own attach and remote workflow                                      |
 | Extensibility              | TypeScript providers and agent-specific hooks or plugins                                                                        | Declarative screen-detection manifests plus agent integrations and an API                                              |
@@ -572,6 +578,7 @@ Useful commands:
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent pi
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent claude
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent kiro
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --agent copilot
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux list --provider plugin --waiting
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux inspect <target> --provider plugin
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux status --provider plugin --style tmux
