@@ -129,7 +129,9 @@ test("clear, late old-session hooks, stale waits, malformed events and missing p
   await ingest(
     event("new", start + 6, { event: "notification", notification_type: "permission_prompt" }),
   );
-  assert.equal(status(start + 120_000).status, "unknown");
+  const stale = status(start + 120_000);
+  assert.equal(stale.status, "unknown");
+  assert.equal(stale.source, "copilot-command");
   await ingest("{}", null);
   await ingest("not json");
   await ingest(
@@ -138,6 +140,45 @@ test("clear, late old-session hooks, stale waits, malformed events and missing p
   );
   assert.equal(readdirSync(dir).filter((name) => name.endsWith(".json")).length, 1);
   assert.equal(status().status, "waiting-question");
+});
+
+test("resuming a session clears stale waiting state but a late startup event preserves the first prompt", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-resume-"));
+  const ingest = (payload: string) =>
+    persistCopilotHookState(payload, {
+      paneId: "%20",
+      stateDir: dir,
+      now: start + 500,
+      notify: async () => {},
+    });
+  const status = () =>
+    attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, now: start + 500 })[0]!.runtime.status;
+  await ingest(
+    event("s1", start + 1, { event: "notification", notification_type: "permission_prompt" }),
+  );
+  await ingest(event("s1", start + 2, { event: "sessionStart", source: "resume" }));
+  assert.equal(status(), "idle");
+  await ingest(event("s1", start + 3, { event: "userPromptSubmitted" }));
+  await ingest(event("s1", start + 4, { event: "sessionStart", source: "startup" }));
+  assert.equal(status(), "running");
+});
+
+test("state from an exited Copilot process cannot attach to a replacement in the same pane", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-exit-"));
+  await persistCopilotHookState(
+    event("old", start + 1, { event: "notification", notification_type: "permission_prompt" }),
+    {
+      paneId: "%20",
+      stateDir: dir,
+      now: start + 10,
+      processPid: 999_999_999,
+      notify: async () => {},
+    },
+  );
+  const runtime = attachRuntimeWithCopilot([pane("%20")], { stateDir: dir, now: start + 20 })[0]!
+    .runtime;
+  assert.equal(runtime.status, "unknown");
+  assert.equal(runtime.source, "copilot-command");
 });
 
 test("configured CLI hook args ingest real camelCase payloads without emitting decisions", () => {

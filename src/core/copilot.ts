@@ -28,6 +28,7 @@ interface HookState {
   version: 1;
   paneId: string;
   sessionId: string;
+  processPid: number;
   previousSessionId?: string;
   directory: string;
   status: RuntimeStatus;
@@ -36,6 +37,7 @@ interface HookState {
   updatedAt: number;
 }
 interface HookOptions {
+  processPid?: number;
   paneId?: string | null;
   stateDir?: string;
   now?: number;
@@ -68,6 +70,9 @@ function readState(file: string, paneId: string): HookState | null {
       value.paneId !== paneId ||
       typeof value.sessionId !== "string" ||
       !value.sessionId ||
+      typeof value.processPid !== "number" ||
+      !Number.isSafeInteger(value.processPid) ||
+      value.processPid <= 0 ||
       typeof value.directory !== "string" ||
       !["running", "idle", "waiting-question", "waiting-input", "unknown"].includes(
         String(value.status),
@@ -149,11 +154,15 @@ export async function persistCopilotHookState(
   const sessionId = value.sessionId as string;
   const directory = value.cwd as string;
   const timestamp = value.timestamp as number;
+  const processPid =
+    options.processPid ?? (options.paneId === undefined ? process.ppid : process.pid);
+  if (!Number.isSafeInteger(processPid) || processPid <= 0) return;
   const dir = options.stateDir ?? getCopilotStateDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const file = paneFile(dir, paneId);
   const changed = await withPaneLock(file, () => {
-    const old = readState(file, paneId);
+    const stored = readState(file, paneId);
+    const old = stored?.processPid === processPid ? stored : null;
     if (
       old &&
       (sessionId === old.previousSessionId ||
@@ -176,12 +185,15 @@ export async function persistCopilotHookState(
               ? value.notification_type === "permission_prompt"
                 ? "waiting-question"
                 : "waiting-input"
-              : sameSession && old
-                ? old.status
-                : "idle";
+              : (value.source === "resume" && old?.event !== "userPromptSubmitted") ||
+                  !sameSession ||
+                  !old
+                ? "idle"
+                : old.status;
     const state: HookState = {
       version: 1,
       paneId,
+      processPid,
       sessionId,
       directory,
       status,
@@ -206,6 +218,15 @@ export async function persistCopilotHookState(
   if (changed) await (options.notify ?? notifyIntegration)();
 }
 
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return isRecord(error) && error.code === "EPERM";
+  }
+}
+
 export function attachRuntimeWithCopilot(
   panes: DiscoveredPane[],
   options: { stateDir?: string; now?: number } = {},
@@ -215,7 +236,9 @@ export function attachRuntimeWithCopilot(
   return panes.map((entry) => {
     const state = readState(paneFile(dir, entry.pane.paneId), entry.pane.paneId);
     const matching =
-      state?.directory === entry.pane.currentPath && state.updatedAt <= now + CLOCK_SKEW_MS
+      state?.directory === entry.pane.currentPath &&
+      isProcessAlive(state.processPid) &&
+      state.updatedAt <= now + CLOCK_SKEW_MS
         ? state
         : null;
     const fresh = matching && now - matching.updatedAt < STATE_TTL_MS;
