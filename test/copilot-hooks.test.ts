@@ -170,6 +170,23 @@ test("Copilot sidebar composer counts as an idle live prompt", async () => {
   assert.equal(result[0]!.runtime.status, "idle");
 });
 
+test("an idle Copilot prompt ignores an old interrupt hint in scrollback", async () => {
+  const result = await attachRuntimeWithCopilotPreview([pane("%20")], {
+    stateDir: mkdtempSync(join(tmpdir(), "copilot-scrollback-")),
+    capturePreview: async () => [
+      "Previous turn: Esc to interrupt",
+      "● Finished",
+      "~/work  Session: 1 AIC used",
+      "────────────────────────────────────────────────────────────────",
+      "❯",
+      "────────────────────────────────────────────────────────────────",
+      "← open sidebar · / commands · ? help · tab next tab  Claude Sonnet 5",
+    ],
+  });
+  assert.equal(result[0]!.runtime.status, "idle");
+  assert.equal(result[0]!.runtime.source, "copilot-preview");
+});
+
 test("automatically approved checks never wait; unmatched notifications do not clear genuine waits", async () => {
   const dir = mkdtempSync(join(tmpdir(), "copilot-hooks-"));
   const ingest = (payload: string) =>

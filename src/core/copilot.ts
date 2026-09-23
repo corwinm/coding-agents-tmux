@@ -346,7 +346,7 @@ export async function attachRuntimeWithCopilotPreview(
         /Session:\s*\S.*AIC used/.test(recent[0]!) &&
         (hasStandardPrompt || hasSidebarPrompt) &&
         recent[4]!.includes("← open sidebar") &&
-        !lines.some((line) => /esc to interrupt|esc to cancel/i.test(line));
+        !recent.some((line) => /esc to interrupt|esc to cancel/i.test(line));
       if (!isIdlePrompt) return entry;
       return {
         ...entry,
