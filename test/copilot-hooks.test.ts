@@ -14,6 +14,7 @@ import test from "node:test";
 
 import {
   attachRuntimeWithCopilot,
+  attachRuntimeWithCopilotPreview,
   buildCopilotHooksTemplate,
   getCopilotHooksPath,
   installCopilotIntegration,
@@ -89,7 +90,7 @@ test("hook events isolate same-directory panes and clear only resolved prompts",
   );
 });
 
-test("idle hook state persists past the activity TTL only for the same foreground process", async () => {
+test("expired idle hook state needs live preview evidence and never reuses its session identity", async () => {
   const dir = mkdtempSync(join(tmpdir(), "copilot-idle-"));
   await persistCopilotHookState(event("s1", start + 1, { event: "agentStop" }), {
     paneId: "%20",
@@ -97,17 +98,76 @@ test("idle hook state persists past the activity TTL only for the same foregroun
     now: start + 2,
     notify: async () => {},
   });
-  const view = (foreground: boolean) =>
-    attachRuntimeWithCopilot([pane("%20")], {
-      stateDir: dir,
-      now: start + 120_000,
-      isForeground: () => foreground,
-    })[0]!.runtime;
-  assert.equal(view(true).status, "idle");
-  assert.equal(view(true).source, "copilot-hook");
-  assert.equal(view(true).session?.id, "s1");
-  assert.equal(view(false).status, "unknown");
-  assert.equal(view(false).source, "copilot-command");
+  const options = { stateDir: dir, now: start + 120_000, isForeground: () => true };
+  const noPreview = await attachRuntimeWithCopilotPreview([pane("%20")], {
+    ...options,
+    capturePreview: async () => [],
+  });
+  assert.equal(noPreview[0]!.runtime.status, "unknown");
+  const idle = await attachRuntimeWithCopilotPreview([pane("%20")], {
+    ...options,
+    capturePreview: async () => [
+      "~/work  Session: 1 AIC used",
+      "────────────────────────────────────────────────────────────────",
+      "❯",
+      "────────────────────────────────────────────────────────────────",
+      "← open sidebar · / commands · ? help · tab next tab  Claude Sonnet 5",
+    ],
+  });
+  assert.equal(idle[0]!.runtime.status, "idle");
+  assert.equal(idle[0]!.runtime.source, "copilot-preview");
+  assert.equal(idle[0]!.runtime.session?.id, "copilot:work:1.0");
+  const busy = await attachRuntimeWithCopilotPreview([pane("%20")], {
+    ...options,
+    capturePreview: async () => [
+      "~/work  Session: 1 AIC used",
+      "────────────────────────────────────────────────────────────────",
+      "❯",
+      "Esc to interrupt",
+      "← open sidebar · / commands · ? help · tab next tab  Claude Sonnet 5",
+    ],
+  });
+  assert.equal(busy[0]!.runtime.status, "unknown");
+});
+
+test("a fresh Copilot prompt is idle without hooks but a blocking hook remains authoritative", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-preview-"));
+  const preview = [
+    "~/work  Session: 0 AIC used",
+    "────────────────────────────────────────────────────────────────",
+    "❯",
+    "────────────────────────────────────────────────────────────────",
+    "← open sidebar · / commands · ? help · tab next tab  Claude Sonnet 5",
+  ];
+  const options = {
+    stateDir: dir,
+    now: start + 500,
+    isForeground: () => true,
+    capturePreview: async () => preview,
+  };
+  const initial = await attachRuntimeWithCopilotPreview([pane("%20")], options);
+  assert.equal(initial[0]!.runtime.status, "idle");
+  await persistCopilotHookState(
+    event("s1", start + 1, { event: "notification", notification_type: "permission_prompt" }),
+    { paneId: "%20", stateDir: dir, now: start + 2, notify: async () => {} },
+  );
+  const blocked = await attachRuntimeWithCopilotPreview([pane("%20")], options);
+  assert.equal(blocked[0]!.runtime.status, "waiting-question");
+  assert.equal(blocked[0]!.runtime.source, "copilot-hook");
+});
+
+test("Copilot sidebar composer counts as an idle live prompt", async () => {
+  const result = await attachRuntimeWithCopilotPreview([pane("%20")], {
+    stateDir: mkdtempSync(join(tmpdir(), "copilot-sidebar-")),
+    capturePreview: async () => [
+      "~/Developer/.dotfiles [⎇ main*]  Session: 0.18 AIC used",
+      "╻▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄",
+      "┃",
+      "╹▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀",
+      "← open sidebar · / commands · ? help · tab next tab  GPT-6 Luna",
+    ],
+  });
+  assert.equal(result[0]!.runtime.status, "idle");
 });
 
 test("automatically approved checks never wait; unmatched notifications do not clear genuine waits", async () => {

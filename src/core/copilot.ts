@@ -12,6 +12,7 @@ import {
 } from "node:fs";
 
 import { notifyIntegration } from "./notifications.ts";
+import { capturePanePreview } from "./tmux.ts";
 import { getPreferredStateDir } from "../naming.ts";
 import type { DiscoveredPane, PaneRuntimeSummary, RuntimeStatus } from "../types.ts";
 
@@ -283,10 +284,7 @@ export function attachRuntimeWithCopilot(
       state.updatedAt <= now + CLOCK_SKEW_MS
         ? state
         : null;
-    // A completed turn stays idle while its exact Copilot process owns the foreground pane.
-    // Busy and waiting states still expire if the resolution hook never arrives.
-    const fresh =
-      matching && (matching.status === "idle" || now - matching.updatedAt < STATE_TTL_MS);
+    const fresh = matching && now - matching.updatedAt < STATE_TTL_MS;
     return {
       ...entry,
       runtime: {
@@ -307,13 +305,62 @@ export function attachRuntimeWithCopilot(
           timeUpdated: fresh ? matching.updatedAt : now,
         },
         detail: fresh
-          ? `Copilot ${matching.event} hook (${Math.max(0, now - matching.updatedAt)}ms old); ${matching.status === "idle" ? "valid while the process remains foreground" : `expires after ${STATE_TTL_MS}ms`}`
+          ? `Copilot ${matching.event} hook (${Math.max(0, now - matching.updatedAt)}ms old); expires after ${STATE_TTL_MS}ms`
           : matching
             ? `Copilot hook stale (${Math.max(0, now - matching.updatedAt)}ms old); command-only fallback`
             : "Copilot CLI process detected; hook state absent or disabled; command-only fallback",
       },
     };
   });
+}
+
+export async function attachRuntimeWithCopilotPreview(
+  panes: DiscoveredPane[],
+  options: {
+    stateDir?: string;
+    now?: number;
+    isForeground?: (pid: number, tty: string) => boolean;
+    capturePreview?: (target: string) => Promise<string[]>;
+  } = {},
+): Promise<PaneRuntimeSummary[]> {
+  const hooked = attachRuntimeWithCopilot(panes, options);
+  return Promise.all(
+    hooked.map(async (entry) => {
+      if (entry.runtime.source === "copilot-hook") return entry;
+      let lines: string[];
+      try {
+        lines = await (options.capturePreview ?? capturePanePreview)(entry.pane.target);
+      } catch {
+        return entry;
+      }
+      const recent = lines
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .slice(-5);
+      const hasStandardPrompt =
+        /^─{8,}$/.test(recent[1]!) && /^❯(?:\s|$)/.test(recent[2]!) && /^─{8,}$/.test(recent[3]!);
+      const hasSidebarPrompt =
+        /^╻▄{8,}$/.test(recent[1]!) && /^┃(?:\s|$)/.test(recent[2]!) && /^╹▀{8,}$/.test(recent[3]!);
+      const isIdlePrompt =
+        recent.length === 5 &&
+        /Session:\s*\S.*AIC used/.test(recent[0]!) &&
+        (hasStandardPrompt || hasSidebarPrompt) &&
+        recent[4]!.includes("← open sidebar") &&
+        !lines.some((line) => /esc to interrupt|esc to cancel/i.test(line));
+      if (!isIdlePrompt) return entry;
+      return {
+        ...entry,
+        runtime: {
+          ...entry.runtime,
+          activity: "idle" as const,
+          status: "idle" as const,
+          source: "copilot-preview" as const,
+          match: { ...entry.runtime.match, heuristic: true },
+          detail: "Copilot's live prompt is ready for input",
+        },
+      };
+    }),
+  );
 }
 
 export function buildCopilotHooksTemplate(command: string): string {
