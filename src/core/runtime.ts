@@ -7,6 +7,7 @@ import {
   getPluginStateDir,
 } from "./opencode.ts";
 import { attachRuntimeWithPi } from "./pi.ts";
+import { attachRuntimeWithCopilot } from "./copilot.ts";
 import { PRIMARY_CLI_NAME } from "../naming.ts";
 import type { DiscoveredPane, PaneRuntimeSummary, RuntimeProviderOptions } from "../types.ts";
 
@@ -19,6 +20,7 @@ export async function attachRuntimeToPanes(
   const piPanes = panes.filter((entry) => entry.detection.agent === "pi");
   const claudePanes = panes.filter((entry) => entry.detection.agent === "claude");
   const kiroPanes = panes.filter((entry) => entry.detection.agent === "kiro");
+  const copilotPanes = panes.filter((entry) => entry.detection.agent === "copilot");
 
   const resultGroups = await Promise.all([
     opencodePanes.length > 0 ? attachRuntimeWithOpencodeProvider(opencodePanes, options) : [],
@@ -26,6 +28,7 @@ export async function attachRuntimeToPanes(
     piPanes.length > 0 ? attachRuntimeWithPi(piPanes) : [],
     claudePanes.length > 0 ? attachRuntimeWithClaude(claudePanes) : [],
     kiroPanes.length > 0 ? attachRuntimeWithKiro(kiroPanes) : [],
+    copilotPanes.length > 0 ? attachRuntimeWithCopilot(copilotPanes) : [],
   ]);
   const resultsByTarget = new Map(resultGroups.flat().map((entry) => [entry.pane.target, entry]));
 
