@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { basename, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { homedir } from "node:os";
 import {
   existsSync,
@@ -44,6 +44,7 @@ interface HookOptions {
   now?: number;
   notify?: () => Promise<void>;
   eventName?: string;
+  isForeground?: (pid: number, paneId: string) => boolean;
 }
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -57,10 +58,15 @@ export function getCopilotStateDir(): string {
     subdirectory: "copilot-state",
   });
 }
-export function getCopilotHooksPath(
-  home = process.env.COPILOT_HOME ?? join(homedir(), ".copilot"),
-): string {
-  return join(home, "hooks", "coding-agents-tmux.json");
+export function getCopilotHooksPath(home = process.env.COPILOT_HOME): string {
+  return join(home?.trim() || join(homedir(), ".copilot"), "hooks", "coding-agents-tmux.json");
+}
+function isForegroundInPane(pid: number, paneId: string): boolean {
+  const result = spawnSync("tmux", ["display-message", "-p", "-t", paneId, "#{pane_tty}"], {
+    encoding: "utf8",
+    timeout: 500,
+  });
+  return result.status === 0 && isForegroundProcess(pid, result.stdout.trim());
 }
 function readState(file: string, paneId: string): HookState | null {
   try {
@@ -163,11 +169,18 @@ export async function persistCopilotHookState(
   const file = paneFile(dir, paneId);
   const changed = await withPaneLock(file, () => {
     const stored = readState(file, paneId);
+    if (
+      stored &&
+      stored.processPid !== processPid &&
+      !(options.isForeground ?? isForegroundInPane)(processPid, paneId)
+    )
+      return false;
     const old = stored?.processPid === processPid ? stored : null;
     if (
       old &&
-      (sessionId === old.previousSessionId ||
-        timestamp < old.eventAt ||
+      (timestamp < old.eventAt ||
+        (sessionId === old.previousSessionId &&
+          !(event === "sessionStart" && value.source === "resume" && timestamp > old.eventAt)) ||
         (sessionId !== old.sessionId &&
           event !== "sessionStart" &&
           event !== "userPromptSubmitted"))
@@ -310,7 +323,7 @@ export function buildCopilotHooksTemplate(command: string): string {
 }
 export function installCopilotIntegration(command: string, home?: string): { hooksPath: string } {
   const path = getCopilotHooksPath(home);
-  const dir = join(home ?? process.env.COPILOT_HOME ?? join(homedir(), ".copilot"), "hooks");
+  const dir = dirname(path);
   const next = buildCopilotHooksTemplate(command);
   mkdirSync(dir, { recursive: true });
   let output = next;

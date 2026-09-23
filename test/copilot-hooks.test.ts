@@ -1,6 +1,13 @@
 import { spawnSync } from "node:child_process";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -174,6 +181,96 @@ test("resuming a session clears stale waiting state but a late startup event pre
   await ingest(event("s1", start + 3, { event: "userPromptSubmitted" }));
   await ingest(event("s1", start + 4, { event: "sessionStart", source: "startup" }));
   assert.equal(status(), "running");
+});
+
+test("a newer resume returns to the previous session without accepting its late callbacks", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-resume-"));
+  const ingest = (session: string, offset: number, eventName: string, extras = {}) =>
+    persistCopilotHookState(event(session, start + offset, { event: eventName, ...extras }), {
+      paneId: "%20",
+      stateDir: dir,
+      now: start + 500,
+      notify: async () => {},
+    });
+  const runtime = () =>
+    attachRuntimeWithCopilot([pane("%20")], {
+      stateDir: dir,
+      now: start + 500,
+      isForeground: () => true,
+    })[0]!.runtime;
+  await ingest("A", 1, "sessionStart", { source: "startup" });
+  await ingest("B", 3, "sessionStart", { source: "new" });
+  await ingest("A", 4, "agentStop");
+  assert.equal(runtime().session?.id, "B");
+  await ingest("A", 2, "sessionStart", { source: "resume" });
+  assert.equal(runtime().session?.id, "B");
+  await ingest("A", 5, "sessionStart", { source: "resume" });
+  assert.equal(runtime().session?.id, "A");
+  await ingest("A", 6, "userPromptSubmitted");
+  assert.equal(runtime().status, "running");
+  await ingest("B", 7, "agentStop");
+  assert.equal(runtime().session?.id, "A");
+  assert.equal(runtime().status, "running");
+});
+
+test("a background process cannot replace a different foreground PID's state", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-processes-"));
+  const foregroundPid = process.pid;
+  const backgroundPid = process.ppid;
+  const ingest = (pid: number, session: string, offset: number, foreground: boolean) =>
+    persistCopilotHookState(
+      event(session, start + offset, {
+        event: "notification",
+        notification_type: "permission_prompt",
+      }),
+      {
+        paneId: "%20",
+        stateDir: dir,
+        now: start + 500,
+        processPid: pid,
+        isForeground: () => foreground,
+        notify: async () => {},
+      },
+    );
+  const runtime = () =>
+    attachRuntimeWithCopilot([pane("%20")], {
+      stateDir: dir,
+      now: start + 500,
+      isForeground: (pid) => pid === foregroundPid,
+    })[0]!.runtime;
+  await ingest(backgroundPid, "old", 1, false);
+  await ingest(foregroundPid, "new", 2, true);
+  assert.equal(runtime().status, "waiting-question");
+  await ingest(backgroundPid, "old", 3, false);
+  assert.equal(runtime().session?.id, "new");
+  assert.equal(runtime().status, "waiting-question");
+});
+
+test("blank COPILOT_HOME installs into the default home, not the working directory", () => {
+  for (const blank of ["", "   "]) {
+    const root = mkdtempSync(join(tmpdir(), "copilot-blank-home-"));
+    const cwd = join(root, "work");
+    const home = join(root, "home");
+    mkdirSync(cwd);
+    mkdirSync(home);
+    const moduleUrl = new URL("../src/core/copilot.ts", import.meta.url).href;
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--input-type=module",
+        "--eval",
+        `import { installCopilotIntegration } from ${JSON.stringify(moduleUrl)}; installCopilotIntegration('/example/bin');`,
+      ],
+      {
+        cwd,
+        env: { ...process.env, HOME: home, COPILOT_HOME: blank },
+        encoding: "utf8",
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(existsSync(join(home, ".copilot", "hooks", "coding-agents-tmux.json")), true);
+    assert.equal(existsSync(join(cwd, "hooks")), false);
+  }
 });
 
 test("state from an exited Copilot process cannot attach to a replacement in the same pane", async () => {
