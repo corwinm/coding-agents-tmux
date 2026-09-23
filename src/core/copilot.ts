@@ -30,7 +30,8 @@ interface HookState {
   paneId: string;
   sessionId: string;
   processPid: number;
-  previousSessionId?: string;
+  retiredSessionIds?: string[];
+  previousSessionId?: string; // State written before retired-session tracking.
   directory: string;
   status: RuntimeStatus;
   event: EventName;
@@ -80,6 +81,9 @@ function readState(file: string, paneId: string): HookState | null {
       typeof value.processPid !== "number" ||
       !Number.isSafeInteger(value.processPid) ||
       value.processPid <= 0 ||
+      (value.retiredSessionIds !== undefined &&
+        (!Array.isArray(value.retiredSessionIds) ||
+          value.retiredSessionIds.some((id: unknown) => typeof id !== "string" || !id))) ||
       typeof value.directory !== "string" ||
       !["running", "idle", "waiting-question", "waiting-input", "unknown"].includes(
         String(value.status),
@@ -176,10 +180,12 @@ export async function persistCopilotHookState(
     )
       return false;
     const old = stored?.processPid === processPid ? stored : null;
+    const retired =
+      old?.retiredSessionIds ?? (old?.previousSessionId ? [old.previousSessionId] : []);
     if (
       old &&
       (timestamp < old.eventAt ||
-        (sessionId === old.previousSessionId &&
+        (retired.includes(sessionId) &&
           !(event === "sessionStart" && value.source === "resume" && timestamp > old.eventAt)) ||
         (sessionId !== old.sessionId &&
           event !== "sessionStart" &&
@@ -214,11 +220,12 @@ export async function persistCopilotHookState(
       event: event as EventName,
       eventAt: timestamp,
       updatedAt: now,
-      ...(old && !sameSession
-        ? { previousSessionId: old.sessionId }
-        : old?.previousSessionId
-          ? { previousSessionId: old.previousSessionId }
-          : {}),
+      retiredSessionIds: sameSession
+        ? retired
+        : [
+            ...retired.filter((id) => id !== sessionId && id !== old?.sessionId),
+            ...(old ? [old.sessionId] : []),
+          ],
     };
     const temp = `${file}.${process.pid}.${Math.random().toString(16).slice(2)}.tmp`;
     try {

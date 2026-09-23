@@ -213,6 +213,35 @@ test("a newer resume returns to the previous session without accepting its late 
   assert.equal(runtime().status, "running");
 });
 
+test("multiple retired sessions cannot overwrite the current session, but can resume explicitly", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "copilot-retired-"));
+  const ingest = (session: string, offset: number, eventName: string, extras = {}) =>
+    persistCopilotHookState(event(session, start + offset, { event: eventName, ...extras }), {
+      paneId: "%20",
+      stateDir: dir,
+      now: start + 500,
+      notify: async () => {},
+    });
+  const runtime = () =>
+    attachRuntimeWithCopilot([pane("%20")], {
+      stateDir: dir,
+      now: start + 500,
+      isForeground: () => true,
+    })[0]!.runtime;
+  await ingest("A", 1, "sessionStart", { source: "new" });
+  await ingest("B", 2, "sessionStart", { source: "new" });
+  await ingest("C", 3, "sessionStart", { source: "new" });
+  await ingest("A", 4, "userPromptSubmitted");
+  await ingest("A", 5, "sessionStart", { source: "new" });
+  assert.equal(runtime().session?.id, "C");
+  await ingest("A", 6, "sessionStart", { source: "resume" });
+  assert.equal(runtime().session?.id, "A");
+  await ingest("B", 7, "userPromptSubmitted");
+  assert.equal(runtime().session?.id, "A");
+  await ingest("B", 8, "sessionStart", { source: "resume" });
+  assert.equal(runtime().session?.id, "B");
+});
+
 test("a background process cannot replace a different foreground PID's state", async () => {
   const dir = mkdtempSync(join(tmpdir(), "copilot-processes-"));
   const foregroundPid = process.pid;
