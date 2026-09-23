@@ -367,6 +367,46 @@ exit 1
   }
 });
 
+test("discoverAgentPanes detects npm-installed Copilot CLI without matching prose", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ] && [ "$2" = "-a" ]; then
+  printf 'work\t1\t0\t%%1\tproject\tnode\t/tmp/project\t1\t/dev/ttys001\n'
+  printf 'work\t1\t1\t%%2\tproject\tnode\t/tmp/project\t0\t/dev/ttys002\n'
+  exit 0
+fi
+exit 1
+`);
+  const psPath = join(fakeTmux.pathEntry, "ps");
+  writeFileSync(
+    psPath,
+    `#!/usr/bin/env bash
+set -euo pipefail
+case "$2" in
+  /dev/ttys001)
+    printf '/opt/node /tmp/copilot-spike/node_modules/.bin/copilot --no-auto-update\n'
+    printf '/tmp/copilot-spike/node_modules/@github/copilot-darwin-arm64/copilot\n'
+    ;;
+  /dev/ttys002)
+    printf '/opt/node /tmp/project/scripts/copilot-notes.js\n'
+    ;;
+esac
+`,
+    "utf8",
+  );
+  chmodSync(psPath, 0o755);
+  const restoreEnv = setEnv({ PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}` });
+  try {
+    const panes = await discoverAgentPanes();
+    assert.deepEqual(
+      panes.map((pane) => pane.pane.target),
+      ["work:1.0"],
+    );
+    assert.equal(panes[0]?.detection.agent, "copilot");
+  } finally {
+    restoreEnv();
+  }
+});
+
 test("normalizeCapturedPaneLines strips ANSI escapes, expands tabs, and preserves internal blanks", () => {
   const raw = ["plain\ttext", "\u001b[31mred\u001b[0m", "", "   ", "tail", ""].join("\n");
 
