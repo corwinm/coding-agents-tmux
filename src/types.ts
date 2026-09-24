@@ -64,6 +64,7 @@ export type RuntimeSource =
   | "kiro-preview"
   | "kiro-command"
   | "copilot-hook"
+  | "copilot-preview"
   | "copilot-command"
   | "unmapped";
 
