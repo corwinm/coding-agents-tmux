@@ -6,6 +6,7 @@ import type { PaneRuntimeSummary } from "../types.ts";
 
 interface PopupSelectorOptions {
   loadPanes: () => Promise<PaneRuntimeSummary[]>;
+  loadUnseenIdlePaneIds?: () => ReadonlySet<string>;
   loadPreview?: (
     target: PaneRuntimeSummary["pane"]["target"],
     lineCount: number,
@@ -213,13 +214,14 @@ export function renderListRow(
   selected: boolean,
   width: number,
   indexWidth: number,
+  unseenIdlePaneIds?: ReadonlySet<string>,
 ): string {
   const layout = buildListLayout(width, indexWidth);
   const row = [
     selected ? "> " : "  ",
     pad(String(rowIndex), indexWidth),
     "  ",
-    pad(getPaneStatusSymbol(entry), layout.stateWidth),
+    pad(getPaneStatusSymbol(entry, unseenIdlePaneIds), layout.stateWidth),
     "  ",
     pad(entry.pane.target, layout.targetWidth),
     "  ",
@@ -279,15 +281,28 @@ export function getSelectionIndex(
   return index >= 0 ? index : 0;
 }
 
-function renderPopupScreen(
-  panes: PaneRuntimeSummary[],
-  query: string,
-  selectedTarget: string | null,
-  message: string,
-  refreshing: boolean,
-  previewState: PreviewState,
-  popupOutput: PopupOutput,
-): void {
+interface PopupScreenState {
+  panes: PaneRuntimeSummary[];
+  query: string;
+  selectedTarget: string | null;
+  message: string;
+  refreshing: boolean;
+  previewState: PreviewState;
+  popupOutput: PopupOutput;
+  unseenIdlePaneIds: ReadonlySet<string>;
+}
+
+function renderPopupScreen(state: PopupScreenState): void {
+  const {
+    panes,
+    query,
+    selectedTarget,
+    message,
+    refreshing,
+    previewState,
+    popupOutput,
+    unseenIdlePaneIds,
+  } = state;
   const width = Math.max(40, popupOutput.columns ?? 80);
   const height = Math.max(12, popupOutput.rows ?? 24);
   const filtered = filterPanes(panes, query);
@@ -317,6 +332,7 @@ function renderPopupScreen(
       entry.pane.target === selectedPane?.pane.target,
       width,
       indexWidth,
+      unseenIdlePaneIds,
     ),
   );
 
@@ -340,6 +356,7 @@ export async function promptForPopupSelection(
   }
 
   let panes = await options.loadPanes();
+  let unseenIdlePaneIds: ReadonlySet<string> = options.loadUnseenIdlePaneIds?.() ?? new Set();
   let query = "";
   let message =
     panes.length === 0
@@ -402,20 +419,21 @@ export async function promptForPopupSelection(
       const selectedPane = filtered[getSelectionIndex(filtered, selectedTarget)] ?? null;
       const previewTarget = selectedPane?.pane.target ?? null;
 
-      renderPopupScreen(
+      renderPopupScreen({
         panes,
         query,
         selectedTarget,
         message,
         refreshing,
-        {
+        previewState: {
           error: previewTarget ? (previewErrors.get(previewTarget) ?? null) : null,
           lines: previewTarget ? (previewCache.get(previewTarget) ?? []) : [],
           loading: previewTarget !== null && previewLoadingTarget === previewTarget,
           target: previewTarget,
         },
         popupOutput,
-      );
+        unseenIdlePaneIds,
+      });
 
       if (selectedPane) {
         void ensurePreview(selectedPane.pane.target);
@@ -429,20 +447,21 @@ export async function promptForPopupSelection(
 
       previewLoadingTarget = target;
       previewErrors.delete(target);
-      renderPopupScreen(
+      renderPopupScreen({
         panes,
         query,
         selectedTarget,
         message,
         refreshing,
-        {
+        previewState: {
           error: null,
           lines: previewCache.get(target) ?? [],
           loading: true,
           target,
         },
         popupOutput,
-      );
+        unseenIdlePaneIds,
+      });
 
       try {
         previewCache.set(
@@ -488,6 +507,7 @@ export async function promptForPopupSelection(
 
       try {
         panes = await options.loadPanes();
+        unseenIdlePaneIds = options.loadUnseenIdlePaneIds?.() ?? new Set();
         previewCache.clear();
         previewErrors.clear();
         previewLoadingTarget = null;

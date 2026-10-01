@@ -3,13 +3,14 @@ import type { InspectResult, PaneRuntimeSummary } from "../types.ts";
 
 type StatusStyle = "plain" | "tmux";
 
-type StatusTone = "neutral" | "busy" | "waiting" | "idle" | "unknown";
+type StatusTone = "neutral" | "busy" | "waiting" | "idle" | "unseen" | "unknown";
 
 const statusToneColors: Record<StatusTone, string> = {
   neutral: getEnvValue("CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL") ?? "colour252",
   busy: getEnvValue("CODING_AGENTS_TMUX_STATUS_COLOR_BUSY") ?? "colour220",
   waiting: getEnvValue("CODING_AGENTS_TMUX_STATUS_COLOR_WAITING") ?? "colour196",
   idle: getEnvValue("CODING_AGENTS_TMUX_STATUS_COLOR_IDLE") ?? "colour70",
+  unseen: getEnvValue("CODING_AGENTS_TMUX_STATUS_COLOR_UNSEEN") ?? "colour39",
   unknown: getEnvValue("CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN") ?? "colour244",
 };
 
@@ -122,7 +123,10 @@ export function renderPaneTable(panes: PaneRuntimeSummary[]): string {
   return lines.join("\n");
 }
 
-export function renderCompactPaneList(panes: PaneRuntimeSummary[]): string {
+export function renderCompactPaneList(
+  panes: PaneRuntimeSummary[],
+  unseenIdlePaneIds?: ReadonlySet<string>,
+): string {
   if (panes.length === 0) {
     return "";
   }
@@ -141,6 +145,7 @@ export function renderCompactPaneList(panes: PaneRuntimeSummary[]): string {
         sessionTitle,
         title,
         entry.pane.currentPath,
+        getPaneStatusSymbol(entry, unseenIdlePaneIds),
       ].join("\t");
     })
     .join("\n");
@@ -271,7 +276,10 @@ export function renderInspectResult(result: InspectResult): string {
   return lines.join("\n");
 }
 
-export function renderSwitchChoices(panes: PaneRuntimeSummary[]): string {
+export function renderSwitchChoices(
+  panes: PaneRuntimeSummary[],
+  unseenIdlePaneIds?: ReadonlySet<string>,
+): string {
   if (panes.length === 0) {
     return "No likely coding agent tmux panes found.";
   }
@@ -282,7 +290,7 @@ export function renderSwitchChoices(panes: PaneRuntimeSummary[]): string {
       active: entry.pane.isActive ? "*" : "",
       agent: formatAgentLabel(entry.detection.agent),
       target: entry.pane.target,
-      status: getPaneStatusSymbol(entry),
+      status: getPaneStatusSymbol(entry, unseenIdlePaneIds),
       sessionTitle: truncate(entry.runtime.session?.title ?? "(unmatched)", 18),
       title: truncate(entry.pane.paneTitle || "(untitled)", 36),
       path: truncate(entry.pane.currentPath, 40),
@@ -383,7 +391,10 @@ function isWaitingEntry(entry: PaneRuntimeSummary): boolean {
   return entry.runtime.status === "waiting-question" || entry.runtime.status === "waiting-input";
 }
 
-function getBackgroundEntryTone(entry: PaneRuntimeSummary): StatusTone {
+function getBackgroundEntryTone(
+  entry: PaneRuntimeSummary,
+  unseenIdlePaneIds?: ReadonlySet<string>,
+): StatusTone {
   if (isWaitingEntry(entry)) {
     return "waiting";
   }
@@ -393,7 +404,7 @@ function getBackgroundEntryTone(entry: PaneRuntimeSummary): StatusTone {
   }
 
   if (entry.runtime.status === "idle") {
-    return "idle";
+    return unseenIdlePaneIds?.has(entry.pane.paneId) ? "unseen" : "idle";
   }
 
   if (entry.runtime.status === "new") {
@@ -403,7 +414,10 @@ function getBackgroundEntryTone(entry: PaneRuntimeSummary): StatusTone {
   return entry.runtime.activity === "busy" ? "busy" : entry.runtime.activity;
 }
 
-export function getPaneStatusSymbol(entry: PaneRuntimeSummary): string {
+export function getPaneStatusSymbol(
+  entry: PaneRuntimeSummary,
+  unseenIdlePaneIds?: ReadonlySet<string>,
+): string {
   if (isWaitingEntry(entry)) {
     return "";
   }
@@ -413,7 +427,7 @@ export function getPaneStatusSymbol(entry: PaneRuntimeSummary): string {
   }
 
   if (entry.runtime.status === "idle") {
-    return "";
+    return unseenIdlePaneIds?.has(entry.pane.paneId) ? "" : "";
   }
 
   if (entry.runtime.status === "new") {
@@ -450,7 +464,11 @@ export function renderStatusTone(
   return "unknown";
 }
 
-function renderBackgroundSummary(panes: PaneRuntimeSummary[], style: StatusStyle): string[] {
+function renderBackgroundSummary(
+  panes: PaneRuntimeSummary[],
+  style: StatusStyle,
+  unseenIdlePaneIds?: ReadonlySet<string>,
+): string[] {
   if (panes.length === 0) {
     return [formatStatusToken("none", "unknown", style)];
   }
@@ -461,9 +479,14 @@ function renderBackgroundSummary(panes: PaneRuntimeSummary[], style: StatusStyle
   );
   const summary = orderedPanes
     .map((entry) =>
-      formatStatusToken(getPaneStatusSymbol(entry), getBackgroundEntryTone(entry), style, {
-        bold: true,
-      }),
+      formatStatusToken(
+        getPaneStatusSymbol(entry, unseenIdlePaneIds),
+        getBackgroundEntryTone(entry, unseenIdlePaneIds),
+        style,
+        {
+          bold: true,
+        },
+      ),
     )
     .join(separator);
 
@@ -484,16 +507,21 @@ function renderCurrentSummary(current: PaneRuntimeSummary | null, style: StatusS
 export function renderStatusSummary(
   current: PaneRuntimeSummary | null,
   panes: PaneRuntimeSummary[],
-  options: { includeCurrentPlaceholder?: boolean; style?: StatusStyle } = {},
+  options: {
+    includeCurrentPlaceholder?: boolean;
+    style?: StatusStyle;
+    unseenIdlePaneIds?: ReadonlySet<string>;
+  } = {},
 ): string {
   const style = options.style ?? "plain";
+  const unseen = options.unseenIdlePaneIds;
 
   if (current) {
     const backgroundPanes = panes.filter((entry) => entry.pane.target !== current.pane.target);
     const parts = [
       ...renderCurrentSummary(current, style),
       formatStatusToken("|", "neutral", style),
-      ...renderBackgroundSummary(backgroundPanes, style),
+      ...renderBackgroundSummary(backgroundPanes, style, unseen),
     ];
 
     if (statusShowPrefix) {
@@ -511,7 +539,7 @@ export function renderStatusSummary(
     const parts = [
       ...renderCurrentSummary(null, style),
       formatStatusToken("|", "neutral", style),
-      ...renderBackgroundSummary(panes, style),
+      ...renderBackgroundSummary(panes, style, unseen),
     ];
 
     if (statusShowPrefix) {
@@ -529,9 +557,9 @@ export function renderStatusSummary(
     return [
       formatStatusToken(statusPrefix, "neutral", style),
       formatStatusToken("|", "neutral", style),
-      ...renderBackgroundSummary(panes, style),
+      ...renderBackgroundSummary(panes, style, unseen),
     ].join(" ");
   }
 
-  return renderBackgroundSummary(panes, style).join(" ");
+  return renderBackgroundSummary(panes, style, unseen).join(" ");
 }

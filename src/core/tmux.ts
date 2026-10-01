@@ -520,6 +520,23 @@ export async function getCurrentTmuxTarget(): Promise<PaneTarget> {
   return stdoutText.trim() as PaneTarget;
 }
 
+/** Like getCurrentTmuxTarget but returns null when there is no current client. */
+export async function getCurrentTmuxTargetOrNull(): Promise<PaneTarget | null> {
+  try {
+    return await getCurrentTmuxTarget();
+  } catch (error) {
+    if (error instanceof Error && isNoCurrentClientMessage(error.message)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function displayTmuxMessage(message: string): Promise<void> {
+  await runCommand(["tmux", "display-message", message]);
+}
+
 export async function capturePanePreview(target: PaneTarget, lineCount = 16): Promise<string[]> {
   const startLine = `-${Math.max(1, lineCount)}`;
   const { stdoutText, stderrText, exitCode } = await runCommand([

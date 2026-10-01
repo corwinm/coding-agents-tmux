@@ -172,6 +172,33 @@ test("status helpers map runtime states to labels and symbols", () => {
   assert.equal(getPaneStatusSymbol(createSummary("unknown")), "");
 });
 
+test("getPaneStatusSymbol uses the filled circle for unseen idle panes", () => {
+  const idle = createSummary("idle", { pane: createPane({ paneId: "%7" }) });
+
+  assert.equal(getPaneStatusSymbol(idle), "");
+  assert.equal(getPaneStatusSymbol(idle, new Set(["%7"])), "");
+  assert.equal(getPaneStatusSymbol(idle, new Set(["%other"])), "");
+
+  const waiting = createSummary("waiting-input", { pane: createPane({ paneId: "%7" }) });
+  assert.equal(getPaneStatusSymbol(waiting, new Set(["%7"])), "");
+});
+
+test("renderCompactPaneList appends the resolved status glyph, filled for unseen idle", () => {
+  const seenIdle = createSummary("idle", {
+    pane: createPane({ target: "work:1.0", paneId: "%1" }),
+  });
+  const unseenIdle = createSummary("idle", {
+    pane: createPane({ target: "work:1.1", paneIndex: 1, paneId: "%2" }),
+  });
+
+  const output = renderCompactPaneList([seenIdle, unseenIdle], new Set(["%2"]));
+  const rows = output.split("\n").map((line) => line.split("\t"));
+
+  assert.equal(rows[0]?.length, 9);
+  assert.equal(rows[0]?.[8], "");
+  assert.equal(rows[1]?.[8], "");
+});
+
 test("renderStatusTone prioritizes waiting over other activity", () => {
   const current = createSummary("idle", { pane: createPane({ target: "work:1.0" }) });
   const waiting = createSummary("waiting-question", {
@@ -291,7 +318,7 @@ test("renderCompactPaneList prints tab-separated rows", () => {
 
   assert.equal(
     renderCompactPaneList([pane]),
-    "work:1.0\tidle\tidle\tplugin-exact\t1\tSession Title\tOpenCode\t/Users/corwin/Developer/coding-agents-tmux",
+    "work:1.0\tidle\tidle\tplugin-exact\t1\tSession Title\tOpenCode\t/Users/corwin/Developer/coding-agents-tmux\t",
   );
   assert.equal(renderCompactPaneList([]), "");
 });
@@ -308,7 +335,7 @@ test("renderCompactPaneList falls back to unmatched and untitled labels", () => 
 
   assert.equal(
     renderCompactPaneList([pane]),
-    "work:1.1\tunknown\tunknown\tunmapped\t0\t(unmatched)\t(untitled)\t/Users/corwin/Developer/coding-agents-tmux",
+    "work:1.1\tunknown\tunknown\tunmapped\t0\t(unmatched)\t(untitled)\t/Users/corwin/Developer/coding-agents-tmux\t",
   );
 });
 

@@ -281,9 +281,11 @@ test("buildTmuxSnippet includes provider, server map, popup filter, and refresh 
     popupKey: "P",
     waitingMenuKey: "W",
     waitingPopupKey: "C-w",
+    cycleKey: "C-n",
   });
 
   assert.match(snippet, /bind-key M run-shell/);
+  assert.match(snippet, /bind-key C-n run-shell .*'cycle'/);
   assert.match(snippet, /'--provider' 'server'/);
   assert.match(snippet, /'--server-map' '\/tmp\/server-map\.json'/);
   assert.match(snippet, /--waiting/);
@@ -861,6 +863,9 @@ exit 1
     CODING_AGENTS_TMUX_CLAUDE_STATE_DIR: mkdtempSync(
       join(tmpdir(), "coding-agents-tmux-empty-claude-state-"),
     ),
+    CODING_AGENTS_TMUX_CYCLE_STATE_DIR: mkdtempSync(
+      join(tmpdir(), "coding-agents-tmux-empty-cycle-state-"),
+    ),
   });
 
   try {
@@ -888,7 +893,7 @@ exit 1
     assert.equal(compactResult.exitCode, 0);
     assert.equal(
       compactResult.stdoutText.trim(),
-      "work:1.1\tbusy\twaiting-input\tplugin-exact\t0\tWaiting Session\tOpenCode\t/tmp/project-b",
+      "work:1.1\tbusy\twaiting-input\tplugin-exact\t0\tWaiting Session\tOpenCode\t/tmp/project-b\t",
     );
     assert.equal(jsonResult.exitCode, 0);
     assert.deepEqual(
@@ -900,22 +905,22 @@ exit 1
     assert.equal(codexResult.exitCode, 0);
     assert.equal(
       codexResult.stdoutText.trim(),
-      "work:1.2\tbusy\trunning\tcodex-command\t0\t(unmatched)\tShell\t/tmp/codex-project",
+      "work:1.2\tbusy\trunning\tcodex-command\t0\t(unmatched)\tShell\t/tmp/codex-project\t",
     );
     assert.equal(piResult.exitCode, 0);
     assert.equal(
       piResult.stdoutText.trim(),
-      "work:1.5\tbusy\trunning\tpi-command\t0\t(unmatched)\tπ - pi-project\t/tmp/pi-project",
+      "work:1.5\tbusy\trunning\tpi-command\t0\t(unmatched)\tπ - pi-project\t/tmp/pi-project\t",
     );
     assert.equal(claudeResult.exitCode, 0);
     assert.equal(
       claudeResult.stdoutText.trim(),
-      "work:1.6\tbusy\trunning\tclaude-command\t0\t(unmatched)\t✳ Claude Code\t/tmp/claude-project",
+      "work:1.6\tbusy\trunning\tclaude-command\t0\t(unmatched)\t✳ Claude Code\t/tmp/claude-project\t",
     );
     assert.equal(kiroResult.exitCode, 0);
     assert.equal(
       kiroResult.stdoutText.trim(),
-      "work:1.7\tidle\tidle\tkiro-command\t0\tkiro-project\tKiro CLI\t/tmp/kiro-project",
+      "work:1.7\tidle\tidle\tkiro-command\t0\tkiro-project\tKiro CLI\t/tmp/kiro-project\t",
     );
   } finally {
     restoreEnv();
@@ -966,6 +971,7 @@ exit 1
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
     CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_CYCLE_STATE_DIR: mkdtempSync(join(tmpdir(), "coding-agents-tmux-cycle-")),
     TMUX: "1",
   });
 
@@ -991,10 +997,110 @@ exit 1
       new: 0,
       unknown: 0,
       tone: "waiting",
-      summary: "󰚩 |   ",
+      summary: "󰚩 |   ",
     });
     assert.equal(currentOutput.exitCode, 0);
     assert.equal(currentOutput.stdoutText.trim(), "󰚩 |  waiting | ");
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI cycle jumps to the highest-priority unseen pane through tmux", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\n'
+  printf 'work\t2\t0\t%%3\tOpenCode\topencode\t/tmp/project-c\t0\t/dev/ttys003\n'
+  exit 0
+fi
+if [ "$1" = "display-message" ] && [ "$2" = "-p" ]; then
+  printf 'work:1.0\n'
+  exit 0
+fi
+printf '%s\n' "$*" >> '__LOG_PATH__'
+exit 0
+`);
+  const pluginStateDir = createPluginStateDir([
+    {
+      target: "work:1.0",
+      directory: "/tmp/project-a",
+      title: "Current Idle",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+    {
+      target: "work:1.1",
+      directory: "/tmp/project-b",
+      title: "Waiting Session",
+      status: "waiting-question",
+      activity: "busy",
+      updatedAt: 200,
+    },
+    {
+      target: "work:2.0",
+      directory: "/tmp/project-c",
+      title: "Running Session",
+      status: "running",
+      activity: "busy",
+      updatedAt: 300,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_CYCLE_STATE_DIR: mkdtempSync(join(tmpdir(), "coding-agents-tmux-cycle-")),
+    TMUX: "1",
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "cycle", "--provider", "plugin"]);
+
+    assert.equal(result.exitCode, 0);
+    assert.match(readFileSync(fakeTmux.logPath, "utf8"), /select-pane -t work:1\.1/);
+  } finally {
+    restoreEnv();
+  }
+});
+
+test("CLI cycle reports when there is no other agent pane to cycle to", async () => {
+  const fakeTmux = installFakeTmux(`
+if [ "$1" = "list-panes" ]; then
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
+  exit 0
+fi
+if [ "$1" = "display-message" ] && [ "$2" = "-p" ]; then
+  printf 'work:1.0\n'
+  exit 0
+fi
+printf '%s\n' "$*" >> '__LOG_PATH__'
+exit 0
+`);
+  const pluginStateDir = createPluginStateDir([
+    {
+      target: "work:1.0",
+      directory: "/tmp/project-a",
+      title: "Only Idle",
+      status: "idle",
+      activity: "idle",
+      updatedAt: 100,
+    },
+  ]);
+  const restoreEnv = setEnv({
+    PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_CYCLE_STATE_DIR: mkdtempSync(join(tmpdir(), "coding-agents-tmux-cycle-")),
+    TMUX: "1",
+  });
+
+  try {
+    const result = await runCommand([BIN_PATH, "cycle", "--provider", "plugin"]);
+
+    assert.equal(result.exitCode, 0);
+    const log = readFileSync(fakeTmux.logPath, "utf8");
+    assert.match(log, /no other agent pane to cycle to/);
+    assert.doesNotMatch(log, /select-pane/);
   } finally {
     restoreEnv();
   }
@@ -1035,6 +1141,7 @@ exit 1
   const restoreEnv = setEnv({
     PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
     CODING_AGENTS_TMUX_STATE_DIR: pluginStateDir,
+    CODING_AGENTS_TMUX_CYCLE_STATE_DIR: mkdtempSync(join(tmpdir(), "coding-agents-tmux-cycle-")),
     TMUX: "1",
   });
 
@@ -1042,7 +1149,7 @@ exit 1
     const result = await runCommand([BIN_PATH, "status", "--provider", "plugin"]);
 
     assert.equal(result.exitCode, 0);
-    assert.equal(result.stdoutText.trim(), "󰚩 |  ");
+    assert.equal(result.stdoutText.trim(), "󰚩 |  ");
     assert.equal(result.stderrText.trim(), "");
   } finally {
     restoreEnv();
