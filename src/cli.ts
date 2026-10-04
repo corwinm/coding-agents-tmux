@@ -196,7 +196,7 @@ async function loadPaneRuntimeSummaries(options: RuntimeProviderOptions = {}) {
 }
 
 function getUnseenIdlePaneIds(panes: PaneRuntimeSummary[]): Set<string> {
-  const ledger = readCycleLedger();
+  const ledger = readCycleLedger(panes[0]?.pane.serverIdentity);
   return new Set(
     panes
       .filter((entry) => entry.runtime.status === "idle" && !ledger.get(entry.pane.paneId)?.seen)
@@ -507,10 +507,11 @@ async function runCycleCommand(options: SwitchOptions): Promise<void> {
       entry.runtime.status,
       currentTarget !== null && entry.pane.target === currentTarget,
       now,
+      entry.pane.serverIdentity,
     );
   }
 
-  const ledger = readCycleLedger();
+  const ledger = readCycleLedger(panes[0]?.pane.serverIdentity);
   const ranked = rankPanesForCycle(panes, ledger);
   const next = pickNextCyclePane(ranked, currentTarget, ledger);
 
@@ -521,7 +522,7 @@ async function runCycleCommand(options: SwitchOptions): Promise<void> {
 
   const client = options.client ? await resolveTmuxClient(options.client) : undefined;
   await switchToPane(next.pane, client);
-  observePane(next.pane.paneId, next.runtime.status, true, now);
+  observePane(next.pane.paneId, next.runtime.status, true, now, next.pane.serverIdentity);
 }
 
 async function runPopupUiCommand(options: PopupUiOptions): Promise<void> {
@@ -831,6 +832,7 @@ async function runStatusCommand(options: StatusOptions): Promise<void> {
       entry.runtime.status,
       currentTarget !== undefined && entry.pane.target === currentTarget,
       observedAt,
+      entry.pane.serverIdentity,
     );
   }
 

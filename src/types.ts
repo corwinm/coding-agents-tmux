@@ -7,6 +7,8 @@ export interface TmuxPane {
   windowIndex: number;
   paneIndex: number;
   paneId: string;
+  /** Server PID, start time and socket from the same snapshot as this pane. */
+  serverIdentity?: string | null;
   paneTitle: string;
   currentCommand: string;
   currentPath: string;

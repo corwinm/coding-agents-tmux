@@ -536,7 +536,7 @@ test("CLI install-claude writes Claude settings hooks", async () => {
 test("CLI inspect emits JSON for a discovered pane", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys001\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys001\t123\t100\t/test.sock\n'
   exit 0
 fi
 printf 'unexpected args: %s\n' "$*" >&2
@@ -594,7 +594,7 @@ exit 1
 test("CLI inspect --debug exposes Codex hook and preview details", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tspinner\tcodex\t/tmp/codex-project\t1\t/dev/ttys001\n'
+  printf 'work\t1\t0\t%%1\tspinner\tcodex\t/tmp/codex-project\t1\t/dev/ttys001\t123\t100\t/test.sock\n'
   exit 0
 fi
 if [ "$1" = "capture-pane" ]; then
@@ -657,7 +657,7 @@ exit 1
 test("CLI inspect --watch rejects json mode", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tShell\tcodex\t/tmp/codex-project\t1\t/dev/ttys001\n'
+  printf 'work\t1\t0\t%%1\tShell\tcodex\t/tmp/codex-project\t1\t/dev/ttys001\t123\t100\t/test.sock\n'
   exit 0
 fi
 printf 'unexpected args: %s\n' "$*" >&2
@@ -680,7 +680,7 @@ exit 1
 test("CLI switch selects an explicit target through tmux", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t4\t2\t%%4\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys004\n'
+  printf 'work\t4\t2\t%%4\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys004\t123\t100\t/test.sock\n'
   exit 0
 fi
 printf '%s\n' "$*" >> '__LOG_PATH__'
@@ -718,7 +718,7 @@ exit 0
 test("CLI switch falls back to attach-session when tmux has no current client", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t4\t2\t%%4\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys004\n'
+  printf 'work\t4\t2\t%%4\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys004\t123\t100\t/test.sock\n'
   exit 0
 fi
 printf '%s\n' "$*" >> '__LOG_PATH__'
@@ -767,8 +767,8 @@ exit 1
 test("CLI server-map-template prints a V2 shared-server pane/session map", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
-  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\t123\t100\t/test.sock\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\t123\t100\t/test.sock\n'
   exit 0
 fi
 printf 'unexpected args: %s\n' "$*" >&2
@@ -821,13 +821,13 @@ test("CLI claude-hooks-template prints a hooks scaffold", async () => {
 test("CLI list supports compact and json output with runtime filters", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
-  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\n'
-  printf 'work\t1\t2\t%%4\tShell\tcodex\t/tmp/codex-project\t0\t/dev/ttys004\n'
-  printf 'work\t1\t5\t%%5\tπ - pi-project\tpi\t/tmp/pi-project\t0\t/dev/ttys005\n'
-  printf 'work\t1\t6\t%%6\t✳ Claude Code\t2.1.132\t/tmp/claude-project\t0\t/dev/ttys006\n'
-  printf 'work\t1\t7\t%%7\tKiro CLI\tkiro-cli\t/tmp/kiro-project\t0\t/dev/ttys007\n'
-  printf 'work\t2\t0\t%%3\tShell\tbash\t/tmp/other\t0\t/dev/ttys003\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\t123\t100\t/test.sock\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\t123\t100\t/test.sock\n'
+  printf 'work\t1\t2\t%%4\tShell\tcodex\t/tmp/codex-project\t0\t/dev/ttys004\t123\t100\t/test.sock\n'
+  printf 'work\t1\t5\t%%5\tπ - pi-project\tpi\t/tmp/pi-project\t0\t/dev/ttys005\t123\t100\t/test.sock\n'
+  printf 'work\t1\t6\t%%6\t✳ Claude Code\t2.1.132\t/tmp/claude-project\t0\t/dev/ttys006\t123\t100\t/test.sock\n'
+  printf 'work\t1\t7\t%%7\tKiro CLI\tkiro-cli\t/tmp/kiro-project\t0\t/dev/ttys007\t123\t100\t/test.sock\n'
+  printf 'work\t2\t0\t%%3\tShell\tbash\t/tmp/other\t0\t/dev/ttys003\t123\t100\t/test.sock\n'
   exit 0
 fi
 printf 'unexpected args: %s\n' "$*" >&2
@@ -930,9 +930,9 @@ exit 1
 test("CLI status supports summary json and current-pane rendering", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t0\t/dev/ttys001\n'
-  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t1\t/dev/ttys002\n'
-  printf 'work\t2\t0\t%%3\tOpenCode\topencode\t/tmp/project-c\t0\t/dev/ttys003\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t0\t/dev/ttys001\t123\t100\t/test.sock\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t1\t/dev/ttys002\t123\t100\t/test.sock\n'
+  printf 'work\t2\t0\t%%3\tOpenCode\topencode\t/tmp/project-c\t0\t/dev/ttys003\t123\t100\t/test.sock\n'
   exit 0
 fi
 if [ "$1" = "display-message" ]; then
@@ -1009,9 +1009,9 @@ exit 1
 test("CLI cycle jumps to the highest-priority unseen pane through tmux", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
-  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\n'
-  printf 'work\t2\t0\t%%3\tOpenCode\topencode\t/tmp/project-c\t0\t/dev/ttys003\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\t123\t100\t/test.sock\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t0\t/dev/ttys002\t123\t100\t/test.sock\n'
+  printf 'work\t2\t0\t%%3\tOpenCode\topencode\t/tmp/project-c\t0\t/dev/ttys003\t123\t100\t/test.sock\n'
   exit 0
 fi
 if [ "$1" = "display-message" ] && [ "$2" = "-p" ]; then
@@ -1067,7 +1067,7 @@ exit 0
 test("CLI cycle reports when there is no other agent pane to cycle to", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t1\t/dev/ttys001\t123\t100\t/test.sock\n'
   exit 0
 fi
 if [ "$1" = "display-message" ] && [ "$2" = "-p" ]; then
@@ -1109,8 +1109,8 @@ exit 0
 test("CLI status falls back to summary output when tmux has no current client", async () => {
   const fakeTmux = installFakeTmux(`
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t0\t/dev/ttys001\n'
-  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t1\t/dev/ttys002\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project-a\t0\t/dev/ttys001\t123\t100\t/test.sock\n'
+  printf 'work\t1\t1\t%%2\tOpenCode\topencode\t/tmp/project-b\t1\t/dev/ttys002\t123\t100\t/test.sock\n'
   exit 0
 fi
 if [ "$1" = "display-message" ]; then
@@ -1220,7 +1220,7 @@ if [ "$1" = "list-clients" ]; then
   exit 0
 fi
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys002\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys002\t123\t100\t/test.sock\n'
   exit 0
 fi
 if [ "$1" = "display-menu" ]; then
@@ -1251,7 +1251,7 @@ test("CLI menu works inside tmux without an explicit client", async () => {
   const fakeTmux = installFakeTmux(`
 printf '%s\n' "$*" >> '__LOG_PATH__'
 if [ "$1" = "list-panes" ]; then
-  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys002\n'
+  printf 'work\t1\t0\t%%1\tOpenCode\topencode\t/tmp/project\t1\t/dev/ttys002\t123\t100\t/test.sock\n'
   exit 0
 fi
 if [ "$1" = "display-menu" ]; then exit 0; fi
