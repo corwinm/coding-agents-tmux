@@ -401,13 +401,14 @@ install_pi_extension() {
 }
 
 main() {
-  local menu_key popup_key waiting_menu_key waiting_popup_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex install_pi install_claude install_copilot auto_install_value status_text_segment status_inline_segment status_tone_segment status_refresh_command
-  local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unknown notify_command
-  local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key
+  local menu_key popup_key waiting_menu_key waiting_popup_key cycle_key provider server_map popup_filter popup_width popup_height popup_title status_enabled status_style status_position status_option status_interval status_mode install_plugin install_codex install_pi install_claude install_copilot auto_install_value status_text_segment status_inline_segment status_tone_segment status_refresh_command
+  local status_prefix status_color_neutral status_color_busy status_color_waiting status_color_idle status_color_unseen status_color_unknown notify_command
+  local previous_status_segment previous_status_option previous_menu_key previous_popup_key previous_waiting_menu_key previous_waiting_popup_key previous_cycle_key
   menu_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-menu-key' 'O')")"
   popup_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-popup-key' 'P')")"
   waiting_menu_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-waiting-menu-key' 'W')")"
   waiting_popup_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-waiting-popup-key' 'C-w')")"
+  cycle_key="$(normalize_binding_key "$(get_tmux_option '@coding-agents-tmux-cycle-key' 'C-n')")"
   provider="$(get_tmux_option '@coding-agents-tmux-provider' 'plugin')"
   server_map="$(get_tmux_option '@coding-agents-tmux-server-map' '')"
   popup_filter="$(get_tmux_option '@coding-agents-tmux-popup-filter' 'all')"
@@ -477,6 +478,7 @@ main() {
   status_color_busy="$(get_tmux_option '@coding-agents-tmux-status-color-busy' 'colour220')"
   status_color_waiting="$(get_tmux_option '@coding-agents-tmux-status-color-waiting' 'colour196')"
   status_color_idle="$(get_tmux_option '@coding-agents-tmux-status-color-idle' 'colour70')"
+  status_color_unseen="$(get_tmux_option '@coding-agents-tmux-status-color-unseen' 'colour39')"
   status_color_unknown="$(get_tmux_option '@coding-agents-tmux-status-color-unknown' 'colour244')"
   previous_status_segment="$(get_tmux_option '@coding-agents-tmux-status-segment' '')"
   previous_status_option="$(get_tmux_option '@coding-agents-tmux-status-option' 'status-right')"
@@ -484,6 +486,7 @@ main() {
   previous_popup_key="$(get_tmux_option '@coding-agents-tmux-bound-popup-key' '')"
   previous_waiting_menu_key="$(get_tmux_option '@coding-agents-tmux-bound-waiting-menu-key' '')"
   previous_waiting_popup_key="$(get_tmux_option '@coding-agents-tmux-bound-waiting-popup-key' '')"
+  previous_cycle_key="$(get_tmux_option '@coding-agents-tmux-bound-cycle-key' '')"
   status_option="$(normalize_status_option "$status_position")"
 
   if [ ! -f "$CURRENT_DIR/bin/coding-agents-tmux" ]; then
@@ -524,7 +527,7 @@ main() {
       ;;
   esac
 
-  local switch_command waiting_switch_command status_command status_text_command status_inline_command status_tone_command popup_script menu_script bind_command waiting_bind_command
+  local switch_command waiting_switch_command status_command status_text_command status_inline_command status_tone_command cycle_command popup_script menu_script bind_command waiting_bind_command
   popup_script="$CURRENT_DIR/scripts/tmux-popup-switch.sh"
   menu_script="$CURRENT_DIR/scripts/tmux-menu-switch.sh"
 
@@ -540,13 +543,14 @@ main() {
 
   switch_command="'$popup_script' --provider '$provider'"
   waiting_switch_command="'$popup_script' --provider '$provider' --waiting"
-  status_command="cd '$CURRENT_DIR' && CODING_AGENTS_TMUX_STATUS_PREFIX='$status_prefix' CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' CODING_AGENTS_TMUX_STATUS_COLOR_BUSY='$status_color_busy' CODING_AGENTS_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' CODING_AGENTS_TMUX_STATUS_COLOR_IDLE='$status_color_idle' CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/coding-agents-tmux' status --style '$status_style' --provider '$provider'"
+  status_command="cd '$CURRENT_DIR' && CODING_AGENTS_TMUX_STATUS_PREFIX='$status_prefix' CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' CODING_AGENTS_TMUX_STATUS_COLOR_BUSY='$status_color_busy' CODING_AGENTS_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' CODING_AGENTS_TMUX_STATUS_COLOR_IDLE='$status_color_idle' CODING_AGENTS_TMUX_STATUS_COLOR_UNSEEN='$status_color_unseen' CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/coding-agents-tmux' status --style '$status_style' --provider '$provider'"
   status_text_command="cd '$CURRENT_DIR' && CODING_AGENTS_TMUX_STATUS_PREFIX='$status_prefix' CODING_AGENTS_TMUX_STATUS_SHOW_PREFIX='off' '$CURRENT_DIR/bin/coding-agents-tmux' status --style 'plain' --provider '$provider'"
-  status_inline_command="cd '$CURRENT_DIR' && CODING_AGENTS_TMUX_STATUS_PREFIX='$status_prefix' CODING_AGENTS_TMUX_STATUS_SHOW_PREFIX='off' CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' CODING_AGENTS_TMUX_STATUS_COLOR_BUSY='$status_color_busy' CODING_AGENTS_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' CODING_AGENTS_TMUX_STATUS_COLOR_IDLE='$status_color_idle' CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/coding-agents-tmux' status --style 'tmux' --provider '$provider'"
+  status_inline_command="cd '$CURRENT_DIR' && CODING_AGENTS_TMUX_STATUS_PREFIX='$status_prefix' CODING_AGENTS_TMUX_STATUS_SHOW_PREFIX='off' CODING_AGENTS_TMUX_STATUS_COLOR_NEUTRAL='$status_color_neutral' CODING_AGENTS_TMUX_STATUS_COLOR_BUSY='$status_color_busy' CODING_AGENTS_TMUX_STATUS_COLOR_WAITING='$status_color_waiting' CODING_AGENTS_TMUX_STATUS_COLOR_IDLE='$status_color_idle' CODING_AGENTS_TMUX_STATUS_COLOR_UNSEEN='$status_color_unseen' CODING_AGENTS_TMUX_STATUS_COLOR_UNKNOWN='$status_color_unknown' '$CURRENT_DIR/bin/coding-agents-tmux' status --style 'tmux' --provider '$provider'"
   status_tone_command="cd '$CURRENT_DIR' && '$CURRENT_DIR/bin/coding-agents-tmux' status --tone --provider '$provider'"
   status_refresh_command="run-shell -b \"'$CURRENT_DIR/scripts/notify-status-change.sh'\""
   bind_command="'$menu_script' --provider '$provider'"
   waiting_bind_command="'$menu_script' --provider '$provider' --waiting"
+  cycle_command="cd '$CURRENT_DIR' && '$CURRENT_DIR/bin/coding-agents-tmux' cycle --provider '$provider'"
 
   if [ -n "$server_map" ]; then
     switch_command="$switch_command --server-map '$server_map'"
@@ -557,6 +561,7 @@ main() {
     status_tone_command="$status_tone_command --server-map '$server_map'"
     bind_command="$bind_command --server-map '$server_map'"
     waiting_bind_command="$waiting_bind_command --server-map '$server_map'"
+    cycle_command="$cycle_command --server-map '$server_map'"
   fi
 
   if [ -n "$popup_filter_arg" ]; then
@@ -568,6 +573,7 @@ main() {
   unbind_key_if_set "$previous_popup_key"
   unbind_key_if_set "$previous_waiting_menu_key"
   unbind_key_if_set "$previous_waiting_popup_key"
+  unbind_key_if_set "$previous_cycle_key"
 
   if [ -n "$menu_key" ]; then
     tmux bind-key "$menu_key" run-shell "$bind_command"
@@ -585,10 +591,15 @@ main() {
     tmux bind-key "$waiting_popup_key" display-popup -E -w "$popup_width" -h "$popup_height" -T "$popup_title (Waiting)" "$waiting_switch_command"
   fi
 
+  if [ -n "$cycle_key" ]; then
+    tmux bind-key "$cycle_key" run-shell "$cycle_command"
+  fi
+
   store_bound_key '@coding-agents-tmux-bound-menu-key' "$menu_key"
   store_bound_key '@coding-agents-tmux-bound-popup-key' "$popup_key"
   store_bound_key '@coding-agents-tmux-bound-waiting-menu-key' "$waiting_menu_key"
   store_bound_key '@coding-agents-tmux-bound-waiting-popup-key' "$waiting_popup_key"
+  store_bound_key '@coding-agents-tmux-bound-cycle-key' "$cycle_key"
 
   if [ -n "$previous_status_segment" ]; then
     remove_status_segment "$previous_status_option" "$previous_status_segment"

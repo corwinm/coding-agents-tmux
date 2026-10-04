@@ -32,6 +32,7 @@ set -g @coding-agents-tmux-menu-key 'O'
 set -g @coding-agents-tmux-popup-key 'P'
 set -g @coding-agents-tmux-waiting-menu-key 'W'
 set -g @coding-agents-tmux-waiting-popup-key 'C-w'
+set -g @coding-agents-tmux-cycle-key 'C-n'
 set -g @coding-agents-tmux-status 'on'
 set -g @coding-agents-tmux-status-style 'tmux'
 set -g @coding-agents-tmux-status-position 'right'
@@ -45,12 +46,13 @@ To match your tmux theme, you can also override the status colors:
 ```tmux
 set -g @coding-agents-tmux-status-color-neutral 'default'
 set -g @coding-agents-tmux-status-color-idle 'colour244'
+set -g @coding-agents-tmux-status-color-unseen 'colour39'
 set -g @coding-agents-tmux-status-color-busy 'colour81'
 set -g @coding-agents-tmux-status-color-waiting 'colour214'
 set -g @coding-agents-tmux-status-color-unknown 'colour240'
 ```
 
-Using `default` is a good way to let the segment inherit your existing tmux theme colors.
+Using `default` is a good way to let the segment inherit your existing tmux theme colors. The `unseen` color marks idle panes that have finished but that you have not looked at yet; such panes also use a distinct filled-circle glyph (versus the hollow idle circle) so they stand out even in the uncolored menu and popup. Once you focus the pane it reverts to the `idle` color and glyph.
 
 Then install or reload TPM:
 
@@ -173,6 +175,7 @@ Default key bindings:
 - `prefix + P` opens the main popup chooser
 - `prefix + W` jumps to the only waiting session, or opens a waiting-only menu if there are multiple
 - `prefix + C-w` opens the waiting-only popup chooser
+- `prefix + C-n` cycles to the next agent pane that needs attention (see [Smart cycling](#smart-cycling))
 
 Launcher behavior:
 
@@ -194,9 +197,90 @@ set -g @coding-agents-tmux-menu-key 'O'
 set -g @coding-agents-tmux-popup-key 'P'
 set -g @coding-agents-tmux-waiting-menu-key 'W'
 set -g @coding-agents-tmux-waiting-popup-key 'C-w'
+set -g @coding-agents-tmux-cycle-key 'C-n'
 ```
 
 Set any of them to `off` to disable that binding.
+
+## Smart cycling
+
+`prefix + C-n` jumps straight to the agent pane that most needs your attention,
+so you do not have to open a chooser and scan the list yourself. Press it
+repeatedly to walk through every agent pane in priority order.
+
+Panes are ranked by attention tier, highest first:
+
+| Tier | Pane state                                | Why                            |
+| ---- | ----------------------------------------- | ------------------------------ |
+| 1    | waiting for a question or free-form input | blocked on you right now       |
+| 2    | idle                                      | finished; may need review      |
+| 3    | new                                       | just started, nothing yet      |
+| 4    | running                                   | working; nothing for you to do |
+| 5    | unknown                                   | no reliable signal             |
+
+Within a tier, the pane that has been in its state **longest** comes first
+(true FIFO), so a session that has been waiting a while is never starved by
+newer arrivals.
+
+### Seen vs. unseen
+
+Cycling tracks which panes you have already looked at. A pane counts as **seen**
+once it has been the active pane at any point since it entered its current
+state — so ordinary tmux navigation acknowledges panes too, not just cycling. A
+pane becomes **unseen** again when its state changes (for example, a running
+session goes idle, or an idle session starts waiting on a prompt).
+
+Unseen panes are offered before seen ones. Cycling first sweeps every pane you
+have not looked at — highest priority first, across tiers — so an unseen running
+pane comes before a seen idle one. Waiting panes get priority while unseen but
+are never trapped there: once you have glanced at every unseen pane, cycling
+falls back to traversing the full ranked list so every pane stays reachable.
+Waiting panes are the exception to the seen demotion in the _ordering_: a glance
+does not answer a prompt, so a still-waiting pane always sorts ahead of lower
+tiers. Cycling never dead-ends: as long as there is more than one agent pane,
+`C-n` always moves.
+
+Unseen idle panes are also marked in the [status line](#status-line) and in the
+menu and popup choosers with a distinct filled circle (and a blue color where
+colors are available), so you can tell at a glance which finished sessions you
+have not yet reviewed.
+
+### Example
+
+Three agents: **A** waiting on a prompt, **B** just finished (idle), **C** still
+running — none looked at yet.
+
+- Press `C-n` → jumps to **A** (waiting outranks everything).
+- Press `C-n` → jumps to **B** (idle outranks running).
+- Press `C-n` → jumps to **C** (running is last).
+- Press `C-n` → all three are now seen, so cycling falls back to the full ranked
+  list and wraps back to **A**: still waiting, so still first in line.
+
+Once you answer **A**'s prompt it leaves the waiting tier and, now seen, sinks
+behind anything you have not reviewed. But while it is still waiting, glancing at
+it does not push it down — a pane blocked on you stays ahead of an unseen idle or
+running pane, not behind it.
+
+If **C** later goes idle, it becomes unseen again — so the next `C-n` jumps
+straight to it ahead of every seen pane, not just those in its own tier.
+
+The cycle key is configurable like the other bindings, and can be disabled with
+`off`:
+
+```tmux
+set -g @coding-agents-tmux-cycle-key 'C-n'
+```
+
+Cycling records what it has observed under:
+
+```text
+~/.local/state/coding-agents-tmux/cycle-state
+```
+
+This holds one small file per pane (the pane's last observed state, when it
+entered that state, and whether it has been seen). It is derived data and safe
+to delete — cycling simply starts from a clean slate, treating every pane as
+unseen again.
 
 ## Status line
 
@@ -227,9 +311,12 @@ Background pane symbols are shown in a stable target order:
 
 - <img src="docs/assets/icons/status-waiting.png" width="14" alt="waiting icon"> waiting
 - <img src="docs/assets/icons/status-busy.png" width="14" alt="busy icon"> busy
-- <img src="docs/assets/icons/status-idle.png" width="14" alt="idle icon"> idle
+- <img src="docs/assets/icons/status-idle.png" width="14" alt="idle icon"> idle (hollow circle; shown once you have focused the pane)
+- unseen idle (filled circle, blue): finished but not yet looked at — changes to the hollow idle circle after you focus it
 - <img src="docs/assets/icons/status-new.png" width="14" alt="new icon"> new
 - <img src="docs/assets/icons/status-unknown.png" width="14" alt="unknown icon"> unknown
+
+The unseen-idle marker is a distinct glyph as well as a distinct color, so it is still distinguishable in the uncolored menu and popup choosers. It reflects the same seen/unseen tracking that drives [smart cycling](#smart-cycling).
 
 By default the status line adds spaces between background pane symbols for readability. If there are more than eight background panes, it automatically switches to a compact no-space form.
 
@@ -315,6 +402,7 @@ Available tmux options:
 - `@coding-agents-tmux-popup-key` main popup chooser key, default `P`
 - `@coding-agents-tmux-waiting-menu-key` waiting-only menu chooser key, default `W`
 - `@coding-agents-tmux-waiting-popup-key` waiting-only popup chooser key, default `C-w`
+- `@coding-agents-tmux-cycle-key` next-attention cycle key, default `C-n`
 - `@coding-agents-tmux-install-opencode-plugin` `on` or `off`, default `on`
 - `@coding-agents-tmux-install-pi-extension` `on` or `off`, default `on`
 - `@coding-agents-tmux-install-codex-hooks` `on` or `off`, default `on`
@@ -334,6 +422,7 @@ Available tmux options:
 - `@coding-agents-tmux-status-prefix` label shown before the status summary, default Nerd Font robot glyph
 - `@coding-agents-tmux-status-color-neutral` tmux color for the prefix and separators, default `colour252`
 - `@coding-agents-tmux-status-color-idle` tmux color for idle state, default `colour70`
+- `@coding-agents-tmux-status-color-unseen` tmux color for idle panes that finished but have not been looked at, default `colour39`
 - `@coding-agents-tmux-status-color-busy` tmux color for busy state, default `colour220`
 - `@coding-agents-tmux-status-color-waiting` tmux color for waiting state, default `colour196`
 - `@coding-agents-tmux-status-color-unknown` tmux color for unknown/none state, default `colour244`
@@ -589,5 +678,9 @@ Useful commands:
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux menu --client auto
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux install-opencode
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux server-map-template
+~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux cycle --provider plugin
 ~/.tmux/plugins/coding-agents-tmux/bin/coding-agents-tmux tmux-config --provider plugin
 ```
+
+`cycle` is normally driven by the `prefix + C-n` key binding (see
+[Smart cycling](#smart-cycling)); the CLI form is mainly useful for debugging.
