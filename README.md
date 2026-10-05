@@ -230,6 +230,12 @@ state — so ordinary tmux navigation acknowledges panes too, not just cycling. 
 pane becomes **unseen** again when its state changes (for example, a running
 session goes idle, or an idle session starts waiting on a prompt).
 
+Acknowledgements and status ages belong to a pane ID within one tmux server
+lifetime. Detaching and reattaching preserves them, as does restoring sessions
+while the same server and panes survive. A full server restart starts a fresh
+attention sweep: new or restored panes are unseen until focused or cycled to.
+Independent tmux servers never share this history.
+
 Unseen panes are offered before seen ones. Cycling first sweeps every pane you
 have not looked at — highest priority first, across tiers — so an unseen running
 pane comes before a seen idle one. Waiting panes lead this sweep while unseen;

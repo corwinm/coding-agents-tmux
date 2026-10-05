@@ -41,6 +41,9 @@ const TMUX_FIELDS = [
   "#{pane_current_path}",
   "#{pane_active}",
   "#{pane_tty}",
+  "#{pid}",
+  "#{start_time}",
+  "#{socket_path}",
 ] as const;
 
 const ANSI_ESCAPE_PATTERN = new RegExp(String.raw`\u001B\[[0-9;?]*[ -/]*[@-~]`, "g");
@@ -335,7 +338,7 @@ export function parseListAllPanesOutput(stdoutText: string): TmuxPane[] {
 export function parsePaneLine(line: string): TmuxPane {
   const parts = line.split("\t");
 
-  if (parts.length !== TMUX_FIELDS.length) {
+  if (parts.length !== 9 && parts.length !== TMUX_FIELDS.length) {
     throw new Error(`Unexpected tmux output: ${line}`);
   }
 
@@ -348,6 +351,16 @@ export function parsePaneLine(line: string): TmuxPane {
   const currentPath = parts[6];
   const paneActive = parts[7];
   const tty = parts[8];
+  const [serverPid, serverStartedAt, socketPath] = parts.slice(9);
+  // Older/malformed snapshots must never fall back to a pane-only ledger.
+  const serverIdentity =
+    serverPid &&
+    /^[1-9]\d*$/.test(serverPid) &&
+    serverStartedAt &&
+    /^[1-9]\d*$/.test(serverStartedAt) &&
+    socketPath
+      ? JSON.stringify([serverPid, serverStartedAt, socketPath])
+      : null;
 
   if (
     sessionName === undefined ||
@@ -369,6 +382,7 @@ export function parsePaneLine(line: string): TmuxPane {
     paneIndex: Number(paneIndex),
     paneId,
     paneTitle,
+    serverIdentity,
     currentCommand,
     currentPath,
     isActive: paneActive === "1",

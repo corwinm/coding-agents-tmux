@@ -16,6 +16,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 import { getPreferredStateDir, getStateDirCandidates } from "../naming.ts";
 import type { RuntimeStatus } from "../types.ts";
@@ -33,8 +34,15 @@ export interface CycleLedgerEntry {
 
 export type CycleLedger = Map<string, CycleLedgerEntry>;
 
-function getCycleStateDir(): string {
-  return getPreferredStateDir({ env: STATE_ENV, subdirectory: STATE_SUBDIR });
+function serverDirectory(serverIdentity: string): string {
+  return `server-${createHash("sha256").update(serverIdentity).digest("hex")}`;
+}
+
+function getCycleStateDir(serverIdentity: string): string {
+  return join(
+    getPreferredStateDir({ env: STATE_ENV, subdirectory: STATE_SUBDIR }),
+    serverDirectory(serverIdentity),
+  );
 }
 
 function toFileName(paneId: string): string {
@@ -63,11 +71,13 @@ function readEntry(filePath: string): CycleLedgerEntry | null {
   }
 }
 
-/** Load every pane's ledger entry, keyed by hex-encoded pane id filename. */
-export function readCycleLedger(): CycleLedger {
+/** Load only this server lifetime's entries, keyed by pane id. Legacy files are ignored. */
+export function readCycleLedger(serverIdentity: string | null | undefined): CycleLedger {
   const ledger: CycleLedger = new Map();
+  if (!serverIdentity) return ledger;
 
-  for (const stateDir of getStateDirCandidates({ env: STATE_ENV, subdirectory: STATE_SUBDIR })) {
+  for (const root of getStateDirCandidates({ env: STATE_ENV, subdirectory: STATE_SUBDIR })) {
+    const stateDir = join(root, serverDirectory(serverIdentity));
     if (!existsSync(stateDir)) {
       continue;
     }
@@ -131,9 +141,11 @@ export function observePane(
   paneId: string,
   status: RuntimeStatus,
   isCurrent: boolean,
-  now: number = Date.now(),
+  now: number,
+  serverIdentity: string | null | undefined,
 ): void {
-  const stateDir = getCycleStateDir();
+  if (!serverIdentity) return;
+  const stateDir = getCycleStateDir(serverIdentity);
   const filePath = join(stateDir, toFileName(paneId));
   const next = computeObservation(readEntry(filePath), status, isCurrent, now);
 

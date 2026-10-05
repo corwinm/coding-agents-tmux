@@ -251,6 +251,7 @@ test("parsePaneLine and parseListAllPanesOutput parse tmux rows and reject malfo
     windowIndex: 12,
     paneIndex: 3,
     paneId: "%9",
+    serverIdentity: null,
     paneTitle: "OpenCode",
     currentCommand: "opencode",
     currentPath: "/tmp/project",
