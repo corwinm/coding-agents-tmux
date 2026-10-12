@@ -394,11 +394,11 @@ install_pi_extension() {
   mkdir -p "$extension_dir"
   ln -sfn "$extension_source" "$extension_target"
 
-  # Only migrate the legacy entry when it points to this checkout's extension.
+  # Only migrate links to this checkout or a verified previous managed checkout.
   # Never traverse a user-managed directory symlink or remove custom files.
   legacy_dir="$pi_dir/extensions/opencode-tmux"
   legacy_target="$legacy_dir/index.ts"
-  if [ ! -L "$legacy_dir" ] && [ -L "$legacy_target" ] && [ "$(readlink "$legacy_target")" = "$extension_source" ]; then
+  if [ ! -L "$legacy_dir" ] && [ -L "$legacy_target" ] && node "$CURRENT_DIR/scripts/is-managed-pi-link.mjs" "$legacy_target" "$extension_source"; then
     rm "$legacy_target"
     rmdir "$legacy_dir" 2>/dev/null || true
     installed_changed='on'

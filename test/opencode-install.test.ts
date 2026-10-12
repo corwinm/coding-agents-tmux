@@ -452,6 +452,7 @@ test("installer migrates owned old-name OpenCode symlinks for both generations",
     for (const source of [
       join("plugin", "coding-agents-tmux.ts"),
       join("plugin", "opencode", "index.ts"),
+      join("plugin", "opencode-tmux.ts"),
     ]) {
       const fixture = makeFixture();
       const pluginRoot = join(fixture.configRoot, "opencode", "plugins");
@@ -464,6 +465,41 @@ test("installer migrates owned old-name OpenCode symlinks for both generations",
       assert.equal(first.changed, true);
       assert.throws(() => lstatSync(legacyPath), /ENOENT/);
       assert.equal(installOpenCodeIntegration({ generation, version }, fixture).changed, false);
+    }
+  }
+});
+
+test("original OpenCode source links require a verified historical checkout", () => {
+  for (const generation of [1, 2] as const) {
+    for (const name of [
+      "opencode-tmux",
+      "coding-agents-tmux",
+      "unrelated",
+      "missing",
+      "malformed",
+    ]) {
+      for (const live of [true, false]) {
+        const fixture = makeFixture();
+        const pluginRoot = join(fixture.configRoot, "opencode", "plugins");
+        const legacyPath = join(pluginRoot, "opencode-tmux.ts");
+        const checkout = join(fixture.repoRoot, "..", "historical checkout");
+        mkdirSync(join(checkout, "plugin"), { recursive: true });
+        mkdirSync(pluginRoot, { recursive: true });
+        if (name !== "missing")
+          writeFileSync(
+            join(checkout, "package.json"),
+            name === "malformed" ? "not json" : JSON.stringify({ name }),
+          );
+        const target = join(checkout, "plugin", "opencode-tmux.ts");
+        if (live) writeFileSync(target, "export default {};\n");
+        symlinkSync(target, legacyPath);
+        const version = generation === 1 ? "1.18.29" : "2.0.9";
+        installOpenCodeIntegration({ generation, version }, fixture);
+        if (name === "opencode-tmux" || name === "coding-agents-tmux") {
+          assert.throws(() => lstatSync(legacyPath), /ENOENT/);
+        } else assert.equal(readlinkSync(legacyPath), target);
+        assert.equal(installOpenCodeIntegration({ generation, version }, fixture).changed, false);
+      }
     }
   }
 });

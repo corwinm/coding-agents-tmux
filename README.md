@@ -84,7 +84,7 @@ OpenCode V2: ~/.config/opencode/plugins/coding-agents-tmux/index.ts
 OpenCode V1: ~/.config/opencode/plugins/coding-agents-tmux.ts
 ```
 
-The V2 directory or V1 file is symlinked to the TPM-installed plugin. If `XDG_CONFIG_HOME` is set, replace `~/.config` with that directory. The installer removes the managed layout for the other generation when upgrading or rolling back. It also removes an old `plugins/opencode-tmux.ts` symlink when its target is a verified managed plugin; unrelated links and user-managed files are preserved.
+The V2 directory or V1 file is symlinked to the TPM-installed plugin. If `XDG_CONFIG_HOME` is set, replace `~/.config` with that directory. The installer removes the managed layout for the other generation when upgrading or rolling back. It also removes an old `plugins/opencode-tmux.ts` symlink when its target is a verified managed plugin (including the original `plugin/opencode-tmux.ts` source in a previous checkout); unrelated links and user-managed files are preserved.
 
 TPM runs the generation-aware installer automatically. To run it manually after changing OpenCode versions:
 
@@ -503,7 +503,7 @@ Pi runtime support is intentionally minimal and extensible:
 - if preview is inconclusive, Pi falls back to a coarse `running` state when a `pi` process is still detected in the tmux pane
 - Pi has no built-in permission or plan mode integration here yet, so those states are not modeled specially
 
-The installer removes the old `~/.pi/agent/extensions/opencode-tmux/index.ts` entry only when it is a symlink to this checkout's bundled Pi extension. It removes the old directory only if empty; custom files, unrelated links, and symlinked directories are preserved.
+The installer removes the old `~/.pi/agent/extensions/opencode-tmux/index.ts` entry only when it is a symlink to this checkout's bundled Pi extension or the exact `plugin/pi-tmux.ts` path in a verified previous `opencode-tmux` or `coding-agents-tmux` checkout. It removes the old directory only if empty; custom files, unrelated links, and symlinked directories are preserved.
 
 After first install or update, restart Pi sessions in tmux so they load the bundled extension and unload any previously loaded duplicate.
 
