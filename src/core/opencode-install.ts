@@ -154,6 +154,16 @@ export function installOpenCodeIntegration(
   );
 
   let changed = false;
+  // The old project name can remain auto-loaded alongside the current plugin.
+  // Unlike conflicting current paths, unrelated legacy entries are left alone.
+  const legacyNamedPath = join(pluginRoot, "opencode-tmux.ts");
+  if (
+    symlinkPointsTo(legacyNamedPath, [v1.source, legacyV1Source]) ||
+    isV1Symlink(legacyNamedPath)
+  ) {
+    unlinkSync(legacyNamedPath);
+    changed = true;
+  }
   if (pathExists(stale.path)) {
     unlinkSync(stale.path);
     changed = true;
