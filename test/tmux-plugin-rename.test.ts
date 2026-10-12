@@ -3,14 +3,16 @@ import {
   chmodSync,
   existsSync,
   lstatSync,
+  mkdirSync,
   mkdtempSync,
   readlinkSync,
   readFileSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, relative } from "node:path";
 import test from "node:test";
 
 import { runCommand } from "../src/runtime.ts";
@@ -181,6 +183,102 @@ exit 1
     assert.equal(readlinkSync(piExtensionPath), join(process.cwd(), "plugin", "pi-tmux.ts"));
   } finally {
     restoreEnv();
+  }
+});
+
+test("Pi installation safely migrates legacy entries and preserves user-managed paths", async () => {
+  for (const kind of [
+    "managed",
+    "extra-file",
+    "file",
+    "unrelated",
+    "directory-link",
+    "old-checkout",
+    "renamed-checkout",
+    "broken-old-checkout",
+    "relative-old-checkout",
+    "wrong-package",
+    "wrong-path",
+    "missing-package",
+  ]) {
+    const fakeTmux = installFakeTmux(`
+case "$1" in
+show-option)
+  case "\${!#}" in
+    @coding-agents-tmux-status) printf 'off\\n' ;;
+    @coding-agents-tmux-auto-install) printf 'pi\\n' ;;
+  esac
+  ;;
+esac
+exit 0
+`);
+    installFakeNpm(fakeTmux.pathEntry);
+    const home = mkdtempSync(join(tmpdir(), "coding-agents-tmux-pi-migration-"));
+    const piHome = join(home, "pi home");
+    const legacyDir = join(piHome, "extensions", "opencode-tmux");
+    const legacyTarget = join(legacyDir, "index.ts");
+    mkdirSync(join(piHome, "extensions"), { recursive: true });
+    if (kind === "directory-link") {
+      const externalDir = join(home, "external");
+      mkdirSync(externalDir);
+      symlinkSync(externalDir, legacyDir, "dir");
+    } else {
+      mkdirSync(legacyDir);
+    }
+    if (kind === "file") {
+      writeFileSync(legacyTarget, "user extension");
+    } else {
+      let target =
+        kind === "unrelated"
+          ? join(home, "missing.ts")
+          : join(process.cwd(), "plugin", "pi-tmux.ts");
+      if (kind.includes("checkout") || kind.startsWith("wrong-") || kind === "missing-package") {
+        const checkout = join(home, "previous checkout");
+        mkdirSync(join(checkout, "plugin"), { recursive: true });
+        if (kind !== "missing-package")
+          writeFileSync(
+            join(checkout, "package.json"),
+            JSON.stringify({
+              name:
+                kind === "wrong-package"
+                  ? "unrelated"
+                  : kind === "renamed-checkout"
+                    ? "coding-agents-tmux"
+                    : "opencode-tmux",
+            }),
+          );
+        target = join(checkout, "plugin", kind === "wrong-path" ? "other.ts" : "pi-tmux.ts");
+        if (kind !== "broken-old-checkout") writeFileSync(target, "export default {};\n");
+        if (kind === "relative-old-checkout") target = relative(legacyDir, target);
+      }
+      symlinkSync(target, legacyTarget);
+    }
+    if (kind === "extra-file") writeFileSync(join(legacyDir, "keep.txt"), "user data");
+    const restoreEnv = setEnv({
+      HOME: home,
+      PI_CODING_AGENT_DIR: piHome,
+      PATH: `${fakeTmux.pathEntry}:${process.env.PATH ?? ""}`,
+    });
+    try {
+      for (let run = 0; run < 2; run += 1) {
+        const result = await runCommand([join(process.cwd(), "coding-agents-tmux.tmux")]);
+        assert.equal(result.exitCode, 0);
+        assert.equal(result.stderrText.trim(), "");
+      }
+      assert.ok(existsSync(join(piHome, "extensions", "coding-agents-tmux", "index.ts")));
+      if (kind === "managed" || kind.includes("checkout"))
+        assert.equal(existsSync(legacyDir), false);
+      else if (kind === "extra-file") {
+        assert.equal(existsSync(legacyTarget), false);
+        assert.equal(readFileSync(join(legacyDir, "keep.txt"), "utf8"), "user data");
+      } else {
+        assert.ok(lstatSync(legacyTarget));
+        if (kind === "file") assert.equal(readFileSync(legacyTarget, "utf8"), "user extension");
+      }
+    } finally {
+      restoreEnv();
+      rmSync(home, { recursive: true, force: true });
+    }
   }
 });
 

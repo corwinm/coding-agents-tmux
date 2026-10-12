@@ -1,17 +1,10 @@
-import {
-  existsSync,
-  lstatSync,
-  mkdirSync,
-  readFileSync,
-  readlinkSync,
-  symlinkSync,
-  unlinkSync,
-} from "node:fs";
+import { existsSync, lstatSync, mkdirSync, readlinkSync, symlinkSync, unlinkSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { OpenCodeVersion } from "./opencode-generation.ts";
+import { isCheckoutSymlink } from "./integration-ownership.ts";
 
 export interface OpenCodeInstallOptions {
   configRoot?: string;
@@ -47,24 +40,6 @@ function symlinkPointsTo(path: string, sources: string[]): boolean {
   const target = readlinkSync(path);
   const resolvedTarget = resolve(join(path, ".."), target);
   return sources.some((source) => resolvedTarget === resolve(source));
-}
-
-function isCheckoutSymlink(path: string, expectedRelativeTarget: string[]): boolean {
-  if (!pathExists(path) || !lstatSync(path).isSymbolicLink()) return false;
-
-  const target = resolve(dirname(path), readlinkSync(path));
-  let checkoutRoot = target;
-  for (const _segment of expectedRelativeTarget) checkoutRoot = dirname(checkoutRoot);
-  if (target !== join(checkoutRoot, ...expectedRelativeTarget)) return false;
-
-  try {
-    const packageJson = JSON.parse(readFileSync(join(checkoutRoot, "package.json"), "utf8")) as {
-      name?: unknown;
-    };
-    return packageJson.name === "coding-agents-tmux";
-  } catch {
-    return false;
-  }
 }
 
 function isLegacyV1Symlink(path: string): boolean {
@@ -154,6 +129,25 @@ export function installOpenCodeIntegration(
   );
 
   let changed = false;
+  // The old project name can remain auto-loaded alongside the current plugin.
+  // Unlike conflicting current paths, unrelated legacy entries are left alone.
+  const legacyNamedPath = join(pluginRoot, "opencode-tmux.ts");
+  if (
+    symlinkPointsTo(legacyNamedPath, [
+      v1.source,
+      legacyV1Source,
+      join(repoRoot, "plugin", "opencode-tmux.ts"),
+    ]) ||
+    isV1Symlink(legacyNamedPath) ||
+    isCheckoutSymlink(
+      legacyNamedPath,
+      ["plugin", "opencode-tmux.ts"],
+      ["opencode-tmux", "coding-agents-tmux"],
+    )
+  ) {
+    unlinkSync(legacyNamedPath);
+    changed = true;
+  }
   if (pathExists(stale.path)) {
     unlinkSync(stale.path);
     changed = true;

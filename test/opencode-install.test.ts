@@ -447,6 +447,90 @@ test("installer refuses a legacy-named symlink from an unrelated checkout", () =
   assert.equal(readlinkSync(staleV1Path), unrelatedPlugin);
 });
 
+test("installer migrates owned old-name OpenCode symlinks for both generations", () => {
+  for (const generation of [1, 2] as const) {
+    for (const source of [
+      join("plugin", "coding-agents-tmux.ts"),
+      join("plugin", "opencode", "index.ts"),
+      join("plugin", "opencode-tmux.ts"),
+    ]) {
+      const fixture = makeFixture();
+      const pluginRoot = join(fixture.configRoot, "opencode", "plugins");
+      const legacyPath = join(pluginRoot, "opencode-tmux.ts");
+      mkdirSync(pluginRoot, { recursive: true });
+      // Relative links must be recognized too.
+      symlinkSync(join("..", "..", "..", "repository with spaces", source), legacyPath);
+      const version = generation === 1 ? "1.18.29" : "2.0.9";
+      const first = installOpenCodeIntegration({ generation, version }, fixture);
+      assert.equal(first.changed, true);
+      assert.throws(() => lstatSync(legacyPath), /ENOENT/);
+      assert.equal(installOpenCodeIntegration({ generation, version }, fixture).changed, false);
+    }
+  }
+});
+
+test("original OpenCode source links require a verified historical checkout", () => {
+  for (const generation of [1, 2] as const) {
+    for (const name of [
+      "opencode-tmux",
+      "coding-agents-tmux",
+      "unrelated",
+      "missing",
+      "malformed",
+    ]) {
+      for (const live of [true, false]) {
+        const fixture = makeFixture();
+        const pluginRoot = join(fixture.configRoot, "opencode", "plugins");
+        const legacyPath = join(pluginRoot, "opencode-tmux.ts");
+        const checkout = join(fixture.repoRoot, "..", "historical checkout");
+        mkdirSync(join(checkout, "plugin"), { recursive: true });
+        mkdirSync(pluginRoot, { recursive: true });
+        if (name !== "missing")
+          writeFileSync(
+            join(checkout, "package.json"),
+            name === "malformed" ? "not json" : JSON.stringify({ name }),
+          );
+        const target = join(checkout, "plugin", "opencode-tmux.ts");
+        if (live) writeFileSync(target, "export default {};\n");
+        symlinkSync(target, legacyPath);
+        const version = generation === 1 ? "1.18.29" : "2.0.9";
+        installOpenCodeIntegration({ generation, version }, fixture);
+        if (name === "opencode-tmux" || name === "coding-agents-tmux") {
+          assert.throws(() => lstatSync(legacyPath), /ENOENT/);
+        } else assert.equal(readlinkSync(legacyPath), target);
+        assert.equal(installOpenCodeIntegration({ generation, version }, fixture).changed, false);
+      }
+    }
+  }
+});
+
+test("old-name OpenCode entries without proven ownership are preserved", () => {
+  for (const kind of ["file", "directory", "unrelated-link", "owned-other-checkout"]) {
+    const fixture = makeFixture();
+    const pluginRoot = join(fixture.configRoot, "opencode", "plugins");
+    const legacyPath = join(pluginRoot, "opencode-tmux.ts");
+    mkdirSync(pluginRoot, { recursive: true });
+    if (kind === "file") writeFileSync(legacyPath, "user data");
+    else if (kind === "directory") mkdirSync(legacyPath);
+    else {
+      const checkout = join(fixture.repoRoot, "..", "other checkout");
+      mkdirSync(join(checkout, "plugin"), { recursive: true });
+      writeFileSync(
+        join(checkout, "package.json"),
+        JSON.stringify({
+          name: kind === "owned-other-checkout" ? "coding-agents-tmux" : "unrelated",
+        }),
+      );
+      // Target need not exist: managed broken symlinks can be cleaned up.
+      symlinkSync(join(checkout, "plugin", "coding-agents-tmux.ts"), legacyPath);
+    }
+    installOpenCodeIntegration({ generation: 2, version: "2.0.9" }, fixture);
+    if (kind === "owned-other-checkout") assert.throws(() => lstatSync(legacyPath), /ENOENT/);
+    else assert.ok(lstatSync(legacyPath));
+    if (kind === "file") assert.equal(readFileSync(legacyPath, "utf8"), "user data");
+  }
+});
+
 test("installer never removes or replaces unrelated user files, directories, or symlinks", () => {
   const cases: Array<{
     generation: 1 | 2;
