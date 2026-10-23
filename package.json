@@ -41,7 +41,7 @@
     "@wasm-fmt/shfmt": "^0.2.7",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.8",
-    "oxfmt": "^0.41.0",
+    "oxfmt": "^0.74.0",
     "oxlint": "^1.74.0",
     "typescript": "^7.0.2"
   },
